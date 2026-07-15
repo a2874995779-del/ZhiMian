@@ -1,0 +1,17 @@
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 本地敏感配置(数据库密码、API Key)
+application-local.yml
+
+# OS
+.DS_Store
+
+# 日志
+logs/
+*.log

@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: zhimian
+  profiles:
+    # 本地敏感配置(数据库密码、API Key)放 application-local.yml,不进 git
+    active: local
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/zhimian?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    username: root
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      # password 如有,在 application-local.yml 中配置
+
+server:
+  port: 8080
+
+mybatis:
+  # Mapper XML 位置
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.zhimian.model.entity
+  configuration:
+    # 下划线字段自动映射驼峰属性(create_time -> createTime)
+    map-underscore-to-camel-case: true
+    # 开发期打印 SQL 到控制台,便于验证缓存是否命中、索引实验等
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# 项目自定义配置
+zhimian:
+  jwt:
+    # secret 在 application-local.yml 中配置,长度必须 >= 32 字节
+    expire-hours: 24

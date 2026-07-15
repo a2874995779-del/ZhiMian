@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhimian.mapper.CategoryMapper">
+    <resultMap id="CategoryResultMap" type="com.zhimian.model.entity.Category">
+        <id     property="id"         column="id"/>
+        <result property="name"       column="name"/>
+        <result property="parentId"   column="parent_id"/>
+        <result property="sort"       column="sort"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="isDeleted"  column="is_deleted"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO category (name,parent_id)
+        VALUES (#{name},#{parentId})
+    </insert>
+
+    <select id="selectAll" resultMap="CategoryResultMap">
+        SELECT id,name,parent_id,sort,create_time,upadte_time,is_deleted
+        FROM category
+        WHERE is_deleted = 0
+        ORDER BY parent_id ASC, sort ASC
+    </select>
+</mapper>
