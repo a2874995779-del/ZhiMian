@@ -18,7 +18,7 @@
     </insert>
 
     <select id="selectAll" resultMap="CategoryResultMap">
-        SELECT id,name,parent_id,sort,create_time,upadte_time,is_deleted
+        SELECT id,name,parent_id,sort,create_time,update_time,is_deleted
         FROM category
         WHERE is_deleted = 0
         ORDER BY parent_id ASC, sort ASC

@@ -7,7 +7,7 @@
         VALUES (#{name})
     </insert>
 
-    <select id="selectAll" resultMap="com.zhimian.model.entity.Tag">
+    <select id="selectAll" resultType="com.zhimian.model.entity.Tag">
         SELECT id,name,create_time
         FROM tag
         ORDER BY id ASC

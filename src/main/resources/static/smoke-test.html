@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>智面 · 冒烟测试台</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", system-ui, sans-serif; background: #f4f6f8; color: #24292f; padding: 24px; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #6a737d; font-size: 13px; margin-bottom: 20px; }
+  .card { background: #fff; border: 1px solid #e1e4e8; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin-bottom: 10px; border-left: 4px solid #4078c0; padding-left: 8px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  input { padding: 6px 8px; border: 1px solid #d1d5da; border-radius: 4px; font-size: 13px; }
+  button { padding: 6px 14px; border: 1px solid #d1d5da; border-radius: 4px; background: #fafbfc; cursor: pointer; font-size: 13px; }
+  button:hover { background: #eef1f4; }
+  button.primary { background: #4078c0; border-color: #4078c0; color: #fff; }
+  button.primary:hover { background: #305f9b; }
+  .tokenState { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: #eee; }
+  .tokenState.ok { background: #dcffe4; color: #176f2c; }
+  code, pre { font-family: Consolas, monospace; font-size: 12px; }
+  pre.sqlHint { background: #f6f8fa; padding: 8px; border-radius: 4px; margin: 6px 0; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+  th { color: #6a737d; font-weight: normal; }
+  .badge { display: inline-block; min-width: 44px; text-align: center; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .pass { background: #dcffe4; color: #176f2c; }
+  .fail { background: #ffe3e3; color: #b31d28; }
+  .pending { background: #eee; color: #888; }
+  .detail { color: #6a737d; font-size: 12px; word-break: break-all; }
+  .summary { font-size: 13px; margin-top: 8px; color: #444; }
+  details pre { background: #f6f8fa; padding: 8px; border-radius: 4px; max-height: 200px; overflow: auto; }
+</style>
+</head>
+<body>
+
+<h1>智面 · 冒烟测试台</h1>
+<div class="sub">对应 阶段部署/6.1.7、6.1.8 自测清单 | 先执行 sql/test-data.sql 灌入种子数据,再按 ①→②→③ 顺序操作</div>
+
+<!-- ① 准备账号 -->
+<div class="card">
+  <h2>① 准备账号与 Token</h2>
+  <div class="row">
+    <input id="adminUser" value="admin" placeholder="管理员用户名">
+    <input id="adminPass" value="admin123" placeholder="密码">
+    <button onclick="registerAcc('admin')">注册</button>
+    <button class="primary" onclick="login('admin')">登录取 Token</button>
+    <span id="adminTokenState" class="tokenState">admin token: 无</span>
+  </div>
+  <div class="sub" style="margin:4px 0 8px">admin/admin123 已由 sql/test-data.sql 建好(直接点登录即可,不用注册);若换新账号则注册后需手动提权:</div>
+  <pre class="sqlHint">UPDATE user SET role='admin' WHERE username='你的账号';</pre>
+  <div class="row">
+    <input id="normalUser" value="usersmoke" placeholder="普通用户名">
+    <input id="normalPass" value="abc12345" placeholder="密码">
+    <button onclick="registerAcc('normal')">注册</button>
+    <button class="primary" onclick="login('normal')">登录取 Token</button>
+    <span id="normalTokenState" class="tokenState">user token: 无</span>
+  </div>
+</div>
+
+<!-- ② 任务1.6 -->
+<div class="card">
+  <h2>② 任务 1.6 · 题目新增/修改/删除(写接口 + 权限 + 校验)</h2>
+  <div class="row">
+    <button class="primary" onclick="runSuite16()">跑完整套件(10 项)</button>
+    <span class="summary" id="sum16"></span>
+  </div>
+  <table id="tbl16"></table>
+</div>
+
+<!-- ③ 任务1.7 -->
+<div class="card">
+  <h2>③ 任务 1.7 · 分页查询(筛选 + 注入 + 边界)</h2>
+  <div class="row">
+    <button class="primary" onclick="runSuite17()">跑完整套件(11 项)</button>
+    <span class="summary" id="sum17"></span>
+  </div>
+  <table id="tbl17"></table>
+</div>
+
+<!-- 手动请求区 -->
+<div class="card">
+  <h2>手动调试(可选)</h2>
+  <div class="row">
+    <select id="mMethod"><option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option></select>
+    <input id="mUrl" value="/api/questions" style="width:320px">
+    <select id="mToken"><option value="">无 token</option><option value="admin">admin</option><option value="normal">普通用户</option></select>
+    <button class="primary" onclick="manualSend()">发送</button>
+  </div>
+  <div class="row"><textarea id="mBody" rows="3" style="width:100%;font-family:Consolas,monospace;font-size:12px" placeholder='请求体 JSON(GET/DELETE 留空)'></textarea></div>
+  <details open><summary>响应</summary><pre id="mResp">-</pre></details>
+</div>
+
+<script>
+const tokens = { admin: localStorage.getItem('tk_admin') || '', normal: localStorage.getItem('tk_normal') || '' };
+refreshTokenState();
+
+function refreshTokenState() {
+  const a = document.getElementById('adminTokenState'), n = document.getElementById('normalTokenState');
+  a.textContent = 'admin token: ' + (tokens.admin ? '已获取' : '无');
+  a.className = 'tokenState' + (tokens.admin ? ' ok' : '');
+  n.textContent = 'user token: ' + (tokens.normal ? '已获取' : '无');
+  n.className = 'tokenState' + (tokens.normal ? ' ok' : '');
+}
+
+async function api(method, url, body, tokenKey) {
+  const headers = {};
+  if (body != null) headers['Content-Type'] = 'application/json';
+  if (tokenKey && tokens[tokenKey]) headers['Authorization'] = 'Bearer ' + tokens[tokenKey];
+  const res = await fetch(url, { method, headers, body: body != null ? JSON.stringify(body) : undefined });
+  return res.json();
+}
+
+async function registerAcc(kind) {
+  const u = document.getElementById(kind === 'admin' ? 'adminUser' : 'normalUser').value;
+  const p = document.getElementById(kind === 'admin' ? 'adminPass' : 'normalPass').value;
+  const r = await api('POST', '/api/auth/register', { username: u, password: p });
+  alert(r.code === 0 ? `注册成功 id=${r.data}` + (kind === 'admin' ? ',记得执行提权 SQL 再登录' : '') : `code=${r.code} ${r.message}`);
+}
+
+async function login(kind) {
+  const u = document.getElementById(kind === 'admin' ? 'adminUser' : 'normalUser').value;
+  const p = document.getElementById(kind === 'admin' ? 'adminPass' : 'normalPass').value;
+  const r = await api('POST', '/api/auth/login', { username: u, password: p });
+  if (r.code === 0) {
+    tokens[kind] = r.data.token;
+    localStorage.setItem('tk_' + kind, r.data.token);
+    if (kind === 'admin' && r.data.user.role !== 'admin') alert('登录成功,但该账号 role=' + r.data.user.role + ',还没提权!写接口测试会失败');
+  } else alert(`code=${r.code} ${r.message}`);
+  refreshTokenState();
+}
+
+/* ---------- 通用套件执行器 ---------- */
+function renderTable(tblId, tests) {
+  const tbl = document.getElementById(tblId);
+  tbl.innerHTML = '<tr><th style="width:40px">#</th><th>用例</th><th style="width:70px">结果</th><th>详情</th></tr>' +
+    tests.map((t, i) => `<tr><td>${i + 1}</td><td>${t.name}</td><td><span class="badge pending" id="${tblId}_b${i}">待跑</span></td><td class="detail" id="${tblId}_d${i}">-</td></tr>`).join('');
+}
+
+async function runTests(tblId, sumId, tests) {
+  renderTable(tblId, tests);
+  let pass = 0;
+  const ctx = {};   // 用例间共享状态(如新建题目的 id)
+  for (let i = 0; i < tests.length; i++) {
+    const t = tests[i];
+    const badge = document.getElementById(`${tblId}_b${i}`), detail = document.getElementById(`${tblId}_d${i}`);
+    try {
+      const result = await t.run(ctx);
+      badge.className = 'badge ' + (result.pass ? 'pass' : 'fail');
+      badge.textContent = result.pass ? '通过' : '失败';
+      detail.textContent = result.msg;
+      if (result.pass) pass++;
+    } catch (e) {
+      badge.className = 'badge fail'; badge.textContent = '异常';
+      detail.textContent = String(e);
+    }
+  }
+  document.getElementById(sumId).textContent = `通过 ${pass}/${tests.length}` + (pass === tests.length ? ' ✅ 全绿' : ' ❌ 有失败项,对照 6.1.7/6.1.8 文档排查');
+}
+
+const expectCode = (r, want, extra) => ({
+  pass: r.code === want && (!extra || extra.ok),
+  msg: `期望 code=${want},实际 code=${r.code}(${r.message})` + (extra ? ';' + extra.msg : '')
+});
+
+/* ---------- 任务 1.6 套件 ---------- */
+function runSuite16() {
+  if (!tokens.admin) return alert('先在 ① 登录 admin');
+  const Q = { title: '冒烟-线程池核心参数?', content: '冒烟测试数据', answer: '七大参数', difficulty: 2, categoryId: 3, tagIds: [1, 2] };
+  runTests('tbl16', 'sum16', [
+    { name: '不带 token 新增 → 40100', run: async () => expectCode(await api('POST', '/api/questions', Q, null), 40100) },
+    { name: '普通用户新增 → 40300', run: async () => {
+        if (!tokens.normal) return { pass: false, msg: '未登录普通用户,先在 ① 登录' };
+        return expectCode(await api('POST', '/api/questions', Q, 'normal'), 40300); } },
+    { name: 'admin 新增(带标签 [1,2]) → 0', run: async ctx => {
+        const r = await api('POST', '/api/questions', Q, 'admin');
+        ctx.id = r.data;
+        return expectCode(r, 0, { ok: r.data > 0, msg: '返回题目 id=' + r.data }); } },
+    { name: '新增 difficulty=3(验证 @Max 上限) → 0', run: async ctx => {
+        const r = await api('POST', '/api/questions', { ...Q, title: '冒烟-困难题', difficulty: 3, tagIds: [] }, 'admin');
+        ctx.id2 = r.data;
+        return expectCode(r, 0, { ok: r.data > 0, msg: 'id=' + r.data + '(tagIds=[] 空守卫同时生效)' }); } },
+    { name: '新增 difficulty=5 → 40000 参数校验', run: async () => expectCode(await api('POST', '/api/questions', { ...Q, difficulty: 5 }, 'admin'), 40000) },
+    { name: '新增缺 title → 40000', run: async () => expectCode(await api('POST', '/api/questions', { ...Q, title: '' }, 'admin'), 40000) },
+    { name: '修改题目(换标题、标签换成 [2]) → 0', run: async ctx =>
+        expectCode(await api('PUT', '/api/questions/' + ctx.id, { ...Q, title: '冒烟-已修改', tagIds: [2] }, 'admin'), 0) },
+    { name: '删除题目 → 0', run: async ctx => expectCode(await api('DELETE', '/api/questions/' + ctx.id, null, 'admin'), 0) },
+    { name: '再删同一题 → 40400(逻辑删除生效)', run: async ctx => expectCode(await api('DELETE', '/api/questions/' + ctx.id, null, 'admin'), 40400) },
+    { name: '清理:删除第 4 步的题目 → 0', run: async ctx => expectCode(await api('DELETE', '/api/questions/' + ctx.id2, null, 'admin'), 0) },
+  ]);
+}
+
+/* ---------- 任务 1.7 套件 ---------- */
+function runSuite17() {
+  runTests('tbl17', 'sum17', [
+    { name: '裸查(无任何参数)→ 0,默认第 1 页 10 条,且列表无 answer 字段', run: async () => {
+        const r = await api('GET', '/api/questions', null, null);
+        if (r.code !== 0) return { pass: false, msg: 'code=' + r.code + ' ' + r.message };
+        const rec = r.data.records, leak = rec.length && (('answer' in rec[0]) || ('content' in rec[0]));
+        return { pass: rec.length <= 10 && !leak && r.data.total >= 20,
+                 msg: `total=${r.data.total},本页 ${rec.length} 条,answer/content 泄漏:${leak ? '是!' : '否'}` }; } },
+    { name: '第 2 页与第 1 页不重叠', run: async () => {
+        const p1 = await api('GET', '/api/questions?pageNum=1&pageSize=10', null, null);
+        const p2 = await api('GET', '/api/questions?pageNum=2&pageSize=10', null, null);
+        const ids1 = new Set(p1.data.records.map(x => x.id));
+        const overlap = p2.data.records.filter(x => ids1.has(x.id)).length;
+        return { pass: p2.code === 0 && overlap === 0, msg: `第2页 ${p2.data.records.length} 条,与第1页重叠 ${overlap} 条` }; } },
+    { name: '按分类 categoryId=3 → 每条 categoryId 都是 3 且带 categoryName', run: async () => {
+        const r = await api('GET', '/api/questions?categoryId=3', null, null);
+        const bad = r.data.records.filter(x => x.categoryId !== 3).length;
+        return { pass: r.code === 0 && r.data.total > 0 && bad === 0,
+                 msg: `total=${r.data.total},不符合条数=${bad},首条 categoryName=${r.data.records[0]?.categoryName}` }; } },
+    { name: '按难度 difficulty=2 → 每条都是 2', run: async () => {
+        const r = await api('GET', '/api/questions?difficulty=2', null, null);
+        const bad = r.data.records.filter(x => x.difficulty !== 2).length;
+        return { pass: r.code === 0 && r.data.total > 0 && bad === 0, msg: `total=${r.data.total},不符合=${bad}` }; } },
+    { name: '按标签 tagId=8(高频)→ 有结果且每条 tags 含"高频"', run: async () => {
+        const r = await api('GET', '/api/questions?tagId=8', null, null);
+        if (r.code !== 0) return { pass: false, msg: 'code=' + r.code + ' ' + r.message };
+        const bad = r.data.records.filter(x => !(x.tags || []).includes('高频')).length;
+        return { pass: r.data.total > 0 && bad === 0, msg: `total=${r.data.total},tags 不含高频的=${bad}` }; } },
+    { name: '关键词 keyword=线程 → 每条标题含"线程"', run: async () => {
+        const r = await api('GET', '/api/questions?keyword=线程', null, null);
+        const bad = r.data.records.filter(x => !x.title.includes('线程')).length;
+        return { pass: r.code === 0 && r.data.total > 0 && bad === 0, msg: `total=${r.data.total},不符合=${bad}` }; } },
+    { name: '组合筛选 categoryId=3 + difficulty=2 + keyword=线程 → 交集', run: async () => {
+        const r = await api('GET', '/api/questions?categoryId=3&difficulty=2&keyword=线程', null, null);
+        const bad = r.data.records.filter(x => x.categoryId !== 3 || x.difficulty !== 2 || !x.title.includes('线程')).length;
+        return { pass: r.code === 0 && bad === 0, msg: `total=${r.data.total},不符合=${bad}` }; } },
+    { name: "SQL 注入 keyword=' OR 1=1 -- → 不返回全表", run: async () => {
+        const all = await api('GET', '/api/questions', null, null);
+        const r = await api('GET', '/api/questions?keyword=' + encodeURIComponent("' OR 1=1 -- "), null, null);
+        return { pass: r.code === 0 && r.data.total < all.data.total,
+                 msg: `注入查询 total=${r.data.total}(全表 ${all.data.total});若两者相等说明用了 \${} 被注入!` }; } },
+    { name: '空结果 → records 是 [] 而不是 null', run: async () => {
+        const r = await api('GET', '/api/questions?keyword=不存在的题目xyz', null, null);
+        return { pass: r.code === 0 && Array.isArray(r.data.records) && r.data.records.length === 0 && r.data.total === 0,
+                 msg: `total=${r.data.total},records=${JSON.stringify(r.data.records)}` }; } },
+    { name: '非法参数 pageNum=0 → 40000', run: async () => expectCode(await api('GET', '/api/questions?pageNum=0', null, null), 40000) },
+    { name: '非法参数 pageSize=999 → 40000', run: async () => expectCode(await api('GET', '/api/questions?pageSize=999', null, null), 40000) },
+  ]);
+}
+
+/* ---------- 手动调试 ---------- */
+async function manualSend() {
+  const m = document.getElementById('mMethod').value, u = document.getElementById('mUrl').value;
+  const b = document.getElementById('mBody').value.trim(), tk = document.getElementById('mToken').value;
+  const r = await api(m, u, b ? JSON.parse(b) : null, tk || null);
+  document.getElementById('mResp').textContent = JSON.stringify(r, null, 2);
+}
+</script>
+</body>
+</html>

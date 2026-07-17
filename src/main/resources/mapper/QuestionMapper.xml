@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhimian.mapper.QuestionMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO question (title,content,answer,difficulty,category_id,create_user_id)
+        VALUES (#{title},#{content},#{answer},#{difficulty},#{categoryId},#{createUserId})
+    </insert>
+
+    <update id="update">
+        UPDATE question
+        SET title       =#{title},
+            content     =#{content},
+            answer      =#{answer},
+            difficulty  =#{difficulty},
+            category_id =#{categoryId}
+        WHERE id =#{id} AND is_deleted =0
+    </update>
+
+    <update id="logicalDelete">
+        UPDATE question
+        SET is_deleted =1
+        WHERE id=#{id} AND is_deleted = 0
+    </update>
+
+    <select id="selectById" resultType="com.zhimian.model.entity.Question">
+        SELECT id,title,content,answer,difficulty,category_id,
+               view_count,create_user_id,create_time,update_time,is_deleted
+        FROM question
+        WHERE id=#{id} AND is_deleted = 0
+    </select>
+
+    <sql id="pageCondition">
+        FROM question q
+        <if test="tagId != null">
+            JOIN question_tag qt ON qt.question_id = q.id
+        </if>
+        <where>
+            q.is_deleted = 0
+            <if test="categoryId !=null">
+                AND q.category_id = #{categoryId}
+            </if>
+            <if test="difficulty !=null">
+                AND q.difficulty = #{difficulty}
+            </if>
+            <if test="tagId !=null">
+                AND qt.tag_id = #{tagId}
+            </if>
+            <if test="keyword !=null and keyword!=''">
+                AND q.title LIKE CONCAT ('%',#{keyword},'%')
+            </if>
+        </where>
+    </sql>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*)
+        <include refid="pageCondition"/>
+    </select>
+
+    <select id="selectPage" resultType="com.zhimian.model.entity.Question">
+        SELECT q.id,q.title,q.difficulty,q.category_id,q.view_count,q.create_time
+        <include refid="pageCondition"/>
+        ORDER BY q.create_time DESC
+        LIMIT #{offset},#{pageSize}
+    </select>
+</mapper>

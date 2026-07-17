@@ -10,6 +10,6 @@ public class CategoryAddDTO {
     @NotBlank(message = "分类名不能为空")
     @Size(max = 64,message = "分类名最大长度不能超过64")
     private String name;
-    @NotBlank(message = "parentId不能为空，顶级分类请穿0")
+    @NotNull(message = "parentId不能为空，顶级分类请穿0")
     private Long parentId;
 }
