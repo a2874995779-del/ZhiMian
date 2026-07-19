@@ -63,4 +63,18 @@
         ORDER BY q.create_time DESC
         LIMIT #{offset},#{pageSize}
     </select>
+
+    <update id="incrementView">
+        UPDATE question
+        SET view_count = view_count + #{delta}
+        WHERE id = #{id} AND is_deleted = 0
+    </update>
+
+    <select id="selectHot" resultType="com.zhimian.model.entity.Question">
+        SELECT id,title,difficulty,category_id,view_count,create_time
+        FROM question
+        WHERE is_deleted=0
+        ORDER BY view_count DESC
+        LIMIT #{limit}
+    </select>
 </mapper>
