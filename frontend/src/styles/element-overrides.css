@@ -1,0 +1,71 @@
+/*
+  用 CSS 变量重写 Element Plus 的默认视觉语言,
+  让组件库"长成"智面自己的设计系统,而不是套壳。
+*/
+:root {
+  --el-color-primary: #0071e3;
+  --el-color-primary-light-3: #4c9fec;
+  --el-color-primary-light-5: #7fbcf3;
+  --el-color-primary-light-7: #b2d8f9;
+  --el-color-primary-light-9: #e6f2fd;
+  --el-color-primary-dark-2: #0058b3;
+
+  --el-color-success: #34c759;
+  --el-color-warning: #ff9f0a;
+  --el-color-danger: #ff3b30;
+  --el-color-error: #ff3b30;
+
+  --el-border-radius-base: 12px;
+  --el-border-radius-small: 8px;
+  --el-border-radius-round: 999px;
+
+  --el-font-family: var(--zm-font-body);
+
+  --el-bg-color: transparent;
+  --el-bg-color-overlay: var(--zm-bg-elevated);
+  --el-text-color-primary: var(--zm-ink);
+  --el-text-color-regular: var(--zm-ink-soft);
+  --el-text-color-secondary: var(--zm-ink-faint);
+  --el-border-color: var(--zm-border);
+  --el-border-color-light: var(--zm-border);
+  --el-fill-color-blank: var(--zm-bg-elevated);
+
+  --el-transition-duration: 0.4s;
+  --el-transition-function-ease-in-out-bezier: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.el-button {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+    background-color 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.el-button:not(.is-text):not(.is-link):active {
+  transform: scale(0.96);
+}
+.el-button--primary {
+  box-shadow: 0 6px 20px rgba(0, 113, 227, 0.28);
+}
+
+.el-drawer {
+  background: var(--zm-bg-elevated);
+}
+.el-drawer__header {
+  margin-bottom: 0;
+}
+.el-overlay {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  background-color: rgba(0, 0, 0, 0.28);
+}
+
+.el-tag {
+  border-radius: var(--zm-radius-pill);
+  font-family: var(--zm-font-mono);
+  font-weight: 500;
+}
+
+.el-card {
+  --el-card-border-color: var(--zm-border);
+  --el-card-bg-color: var(--zm-surface);
+}

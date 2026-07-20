@@ -1,0 +1,96 @@
+/*
+  智面 · Interview-Elite Master 设计令牌
+  基调:极简苹果玻璃拟态 + 少量"极客终端"信号(提示符光标、等宽标签)
+  两套色板通过 :root[data-theme] 切换,默认浅色
+*/
+
+:root {
+  /* ---- 色彩 ---- */
+  --zm-bg: #f5f5f7;
+  --zm-bg-elevated: #ffffff;
+  --zm-surface: rgba(255, 255, 255, 0.68);
+  --zm-surface-strong: rgba(255, 255, 255, 0.86);
+  --zm-border: rgba(0, 0, 0, 0.06);
+  --zm-border-strong: rgba(0, 0, 0, 0.1);
+
+  --zm-ink: #1d1d1f;
+  --zm-ink-soft: rgba(29, 29, 31, 0.62);
+  --zm-ink-faint: rgba(29, 29, 31, 0.4);
+
+  --zm-accent: #0071e3;
+  --zm-accent-soft: rgba(0, 113, 227, 0.12);
+  --zm-accent-glow: rgba(0, 113, 227, 0.35);
+
+  --zm-gold: #d4af37;
+  --zm-gold-soft: rgba(212, 175, 55, 0.14);
+  --zm-gold-glow: rgba(212, 175, 55, 0.45);
+
+  --zm-green: #34c759;
+  --zm-orange: #ff9f0a;
+  --zm-red: #ff3b30;
+
+  --zm-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --zm-shadow-md: 0 4px 30px rgba(0, 0, 0, 0.045), 0 1px 3px rgba(0, 0, 0, 0.03);
+  --zm-shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  --zm-shadow-glow-accent: 0 8px 30px rgba(0, 113, 227, 0.18);
+  --zm-shadow-glow-gold: 0 8px 30px rgba(212, 175, 55, 0.22);
+
+  /* ---- 字体 ---- */
+  --zm-font-display: "Inter", "PingFang SC", "Microsoft YaHei", -apple-system, sans-serif;
+  --zm-font-body: "Inter", "PingFang SC", "Microsoft YaHei", -apple-system, sans-serif;
+  --zm-font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+
+  /* ---- 半径 / 间距节奏 ---- */
+  --zm-radius-sm: 10px;
+  --zm-radius-md: 16px;
+  --zm-radius-lg: 22px;
+  --zm-radius-pill: 999px;
+
+  /* ---- 缓动:苹果标志性的超线性减速 ---- */
+  --zm-ease: cubic-bezier(0.25, 1, 0.5, 1);
+  --zm-dur-fast: 0.28s;
+  --zm-dur-base: 0.5s;
+  --zm-dur-slow: 0.8s;
+}
+
+:root[data-theme="dark"] {
+  --zm-bg: #0f0f11;
+  --zm-bg-elevated: #17171a;
+  --zm-surface: rgba(255, 255, 255, 0.055);
+  --zm-surface-strong: rgba(255, 255, 255, 0.09);
+  --zm-border: rgba(255, 255, 255, 0.1);
+  --zm-border-strong: rgba(255, 255, 255, 0.16);
+
+  --zm-ink: #f5f5f7;
+  --zm-ink-soft: rgba(245, 245, 247, 0.64);
+  --zm-ink-faint: rgba(245, 245, 247, 0.42);
+
+  --zm-accent-soft: rgba(0, 113, 227, 0.22);
+  --zm-gold-soft: rgba(212, 175, 55, 0.2);
+
+  --zm-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --zm-shadow-md: 0 4px 30px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.25);
+  --zm-shadow-lg: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --zm-bg: #0f0f11;
+    --zm-bg-elevated: #17171a;
+    --zm-surface: rgba(255, 255, 255, 0.055);
+    --zm-surface-strong: rgba(255, 255, 255, 0.09);
+    --zm-border: rgba(255, 255, 255, 0.1);
+    --zm-border-strong: rgba(255, 255, 255, 0.16);
+
+    --zm-ink: #f5f5f7;
+    --zm-ink-soft: rgba(245, 245, 247, 0.64);
+    --zm-ink-faint: rgba(245, 245, 247, 0.42);
+
+    --zm-accent-soft: rgba(0, 113, 227, 0.22);
+    --zm-gold-soft: rgba(212, 175, 55, 0.2);
+
+    --zm-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --zm-shadow-md: 0 4px 30px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.25);
+    --zm-shadow-lg: 0 24px 70px rgba(0, 0, 0, 0.55);
+  }
+}

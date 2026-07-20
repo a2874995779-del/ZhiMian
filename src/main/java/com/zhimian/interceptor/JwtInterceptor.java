@@ -59,6 +59,7 @@ public class JwtInterceptor implements HandlerInterceptor {
             throw new BusinessException(ErrorCode.NOT_LOGIN);
         }
 
+        //看redis里是否存有登出记录的key，如果有，就说明这个token已经过期了，就抛出异常
         String jti = claims.getId();
         if(Boolean.TRUE.equals(redisTemplate.hasKey(JwtUtil.BLACKLIST_KEY_PREFIX + jti))){
             throw new BusinessException(ErrorCode.TOKEN_EXPIRED);
