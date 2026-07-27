@@ -82,3 +82,43 @@ CREATE TABLE `answer_record` (
   KEY `idx_user_time` (`user_id`, `create_time`),
   KEY `idx_question_id` (`question_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '答题记录表';
+
+-- ============ 阶段二:AI 模拟面试(任务 2.2~2.6)============
+
+-- AI 面试会话表
+CREATE TABLE `interview_session` (
+  `id`          BIGINT       NOT NULL AUTO_INCREMENT,
+  `user_id`     BIGINT       NOT NULL COMMENT '所属用户',
+  `direction`   VARCHAR(32)  NOT NULL COMMENT '面试方向:java_concurrency/jvm/mysql/redis/system_design',
+  `title`       VARCHAR(128) DEFAULT NULL COMMENT '会话标题(默认取方向+日期)',
+  `status`      TINYINT      NOT NULL DEFAULT 0 COMMENT '0-进行中 1-已结束 2-报告已生成',
+  `end_time`    DATETIME     DEFAULT NULL COMMENT '结束时间',
+  `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `is_deleted`  TINYINT      NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `idx_user_id` (`user_id`, `create_time`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT 'AI 面试会话表';
+
+-- 面试消息表(system/user/assistant 全量历史,Redis 上下文丢失时靠它重建)
+CREATE TABLE `interview_message` (
+  `id`          BIGINT      NOT NULL AUTO_INCREMENT,
+  `session_id`  BIGINT      NOT NULL COMMENT '会话 id',
+  `role`        VARCHAR(16) NOT NULL COMMENT 'system/user/assistant',
+  `content`     MEDIUMTEXT  NOT NULL COMMENT '消息内容',
+  `tokens`      INT         DEFAULT NULL COMMENT '该消息估算 token 数',
+  `create_time` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_session_id` (`session_id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '面试消息表';
+
+-- 面试评价报告表(一场会话一份,uk_session_id 兼作幂等兜底)
+CREATE TABLE `interview_report` (
+  `id`          BIGINT   NOT NULL AUTO_INCREMENT,
+  `session_id`  BIGINT   NOT NULL COMMENT '会话 id',
+  `score`       INT      NOT NULL COMMENT '总分 0-100',
+  `content`     JSON     NOT NULL COMMENT '结构化报告:亮点/薄弱点/总评',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_session_id` (`session_id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '面试评价报告表';

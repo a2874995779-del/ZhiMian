@@ -28,6 +28,12 @@ const router = createRouter({
       meta: { label: '模拟面试舱', icon: 'mic' },
     },
     {
+      path: '/interview/history',
+      name: 'interview-history',
+      component: () => import('../views/InterviewHistory.vue'),
+      meta: { label: '面试记录', icon: 'history' },
+    },
+    {
       path: '/profile',
       name: 'profile',
       component: () => import('../views/ComingSoon.vue'),

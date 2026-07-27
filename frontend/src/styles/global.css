@@ -107,6 +107,12 @@ a {
   background: var(--zm-accent-soft);
 }
 
+.zm-tag--graded {
+  color: #34c759;
+  border-color: rgba(52, 199, 89, 0.4);
+  background: rgba(52, 199, 89, 0.1);
+}
+
 /* ---- 滚动条:细,不喧宾夺主 ---- */
 ::-webkit-scrollbar {
   width: 8px;

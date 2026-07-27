@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhimian.mapper.InterviewReportMapper">
+    <insert id="insert" keyProperty="id" useGeneratedKeys="true">
+        INSERT INTO interview_report (session_id, score, content)
+        VALUES (#{sessionId}, #{score}, #{content})
+    </insert>
+
+    <select id="selectBySessionId" resultType="com.zhimian.model.entity.InterviewReport">
+        SELECT id, session_id, score, content, create_time
+        FROM interview_report
+        WHERE session_id = #{sessionId}
+    </select>
+</mapper>

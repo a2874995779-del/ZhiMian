@@ -9,6 +9,7 @@ import com.zhimian.util.JwtUtil;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +37,11 @@ public class JwtInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response,Object handler){
+        if(request.getDispatcherType() == DispatcherType.ASYNC){
+            // SSE 接口(如 chat)靠 Servlet 异步机制收尾,同一个请求会在流结束时再触发一次分发,
+            // 登录态已经在最初那次分发里校验过了,这次不用再验一遍
+            return true;
+        }
         if(!(handler instanceof HandlerMethod handlerMethod)){
             return true;
         }

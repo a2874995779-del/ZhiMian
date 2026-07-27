@@ -12,4 +12,32 @@
         FROM interview_session
         WHERE user_id =#{userId} AND status = 0 AND is_deleted = 0
     </select>
+    
+    <select id="selectById" resultType="com.zhimian.model.entity.InterviewSession">
+        SELECT
+            id,user_id,direction,title,status,end_time,create_time,update_time,is_deleted
+        FROM interview_session
+        WHERE id =#{id} AND is_deleted = 0
+    </select>
+    
+    <select id="countByUserId" resultType="long">
+        SELECT count(*)
+        FROM interview_session
+        WHERE user_id = #{userId} AND is_deleted = 0
+    </select>
+    
+    <select id="selectPageByUserId" resultType="com.zhimian.model.entity.InterviewSession">
+        SELECT
+            id,user_id,direction,title,status,end_time,create_time,update_time,is_deleted
+        FROM interview_session
+        WHERE user_id = #{userId} AND is_deleted = 0
+        ORDER BY create_time DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <update id="updateStatus">
+        UPDATE interview_session
+        SET status = #{status}
+        WHERE id = #{id} AND is_deleted = 0
+    </update>
 </mapper>
