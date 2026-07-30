@@ -21,4 +21,7 @@ public interface InterviewSessionMapper {
                                               @Param("pageSize") Integer pageSize);
 
     void updateStatus(@Param("id") Long id, @Param("status") Integer status);
+
+    // 结束会话:置 status=2 并写入结束时间(end_time)。0→1 那步仍用 updateStatus,只有真正结束才写 end_time。
+    void finishSession(@Param("id") Long id);
 }

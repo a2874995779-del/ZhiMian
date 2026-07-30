@@ -56,9 +56,14 @@ export async function chatInterviewStream(
 
     const contentType = resp.headers.get('content-type') ?? ''
     if (!contentType.includes('text/event-stream')) {
-      // 请求在同步阶段就被拒绝了(会话不存在/已结束/上一轮还没处理完……),
+      // 请求在同步阶段就被拒绝了(会话不存在/已结束/上一轮还没处理完/未登录……),
       // 走的是全局异常处理器返回的普通 {code,message} JSON,不是 SSE
       const body = await resp.json().catch(() => null)
+      // 未登录/登录过期:这条流式请求没走 http.ts 的 axios 拦截器,得在这里补上同一套登出逻辑,
+      // 否则 token 失效了界面还一直显示"已登录"。动态 import 绕开与 stores/auth 的循环依赖(同 http.ts)。
+      if (body?.code === 40100 || body?.code === 40101) {
+        import('../stores/auth').then(({ useAuthStore }) => useAuthStore().logout())
+      }
       handlers.onError(body?.message || '请求失败')
       return
     }

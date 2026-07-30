@@ -26,6 +26,7 @@ public enum InterviewDirection {
     public String getFocus() {
         return focus;
     }
+
     public static InterviewDirection fromCode(String code){
         for(InterviewDirection d : values()){
             if(d.code.equals(code)){

@@ -18,6 +18,7 @@ import com.zhimian.model.entity.InterviewReport;
 import com.zhimian.model.entity.InterviewSession;
 import com.zhimian.model.enums.InterviewDirection;
 import com.zhimian.model.vo.*;
+import com.zhimian.ratelimit.RateLimiter;
 import com.zhimian.service.InterviewService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,7 +49,10 @@ import java.util.concurrent.TimeUnit;
 public class InterviewServiceImpl implements InterviewService {
     private static final int MAX_ACTIVE_SESSIONS = 3;
     private static final String LOCK_PREFIX = "zhimian:interview:lock:";
-    private static final long LOCK_TTL_SECONDS = 60;
+    private static final long LOCK_TTL_SECONDS = 300;
+    private static final String RATE_PREFIX = "zhimian:interview:rate:";
+    private static final long RATE_WINDOW_SECONDS = 10;
+    private final RateLimiter rateLimiter;
     private final InterviewMessageMapper  interviewMessageMapper;
     private final InterviewSessionMapper interviewSessionMapper;
     private final ChatClient chatClient;
@@ -115,7 +119,14 @@ public class InterviewServiceImpl implements InterviewService {
         if(session.getStatus() !=0){
             throw new BusinessException(ErrorCode.CONFLICT,"会话已结束，无法继续对话");
         }
+        // —— 本次任务新增:每用户对话频率限制 ——
+        // userId 在这里(还是处理 HTTP 请求的原始线程)取,ThreadLocal 里还有值;
+        // 这一步只是同步的入口拦截,不涉及后面的异步回调,不存在跨线程读 ThreadLocal 的问题
 
+        Long userId = UserContext.getUserId();
+        if(!rateLimiter.tryAcquire(RATE_PREFIX+userId,RATE_WINDOW_SECONDS)){
+            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"操作太频繁请稍后再试");
+        }
         String lockKey = LOCK_PREFIX+sessionId;
         Boolean locked = stringRedisTemplate.opsForValue().setIfAbsent(lockKey,"1",LOCK_TTL_SECONDS,TimeUnit.SECONDS);
         if(!Boolean.TRUE.equals(locked)){
@@ -124,15 +135,14 @@ public class InterviewServiceImpl implements InterviewService {
 
         try {
             List<InterviewMessage> history = contextManager.load(sessionId);
-
-            InterviewMessage userMsg = buildMessage(sessionId,"user",dto.getContent());
-            interviewMessageMapper.insert(userMsg);
-            contextManager.append(sessionId,userMsg);
             List<Message> springAiMessages = toSpringAiMessages(history);
             springAiMessages.add(new UserMessage(dto.getContent()));
 
-            SseEmitter emitter = new SseEmitter(0L);
+            // 有限超时:模型流卡死(既不吐字也不报错)时,到点触发 onTimeout 自救(dispose+放锁),
+            // 而不是干等到锁 300s TTL 过期后被别的请求开出第二条流
+            SseEmitter emitter = new SseEmitter(TimeUnit.MINUTES.toMillis(5));
             StringBuilder fullReply = new StringBuilder();
+            String userContent = dto.getContent();
 
             Disposable subscription = chatClient.prompt(new Prompt(springAiMessages))
                     .stream()
@@ -140,8 +150,9 @@ public class InterviewServiceImpl implements InterviewService {
                     .doOnNext(fullReply::append)
                     .subscribe(
                             delta -> sendEvent(emitter, Map.of("type", "delta", "content", delta)),
-                            error -> onStreamError(emitter, lockKey, error),
-                            () -> onStreamComplete(emitter, sessionId, lockKey, fullReply.toString())
+                            // fullReply.toString() 在 lambda 里求值:失败时拿到的是"到目前吐出的半截",成功时是全文
+                            error -> onStreamError(emitter, sessionId, lockKey, userContent, fullReply.toString(), error),
+                            () -> onStreamComplete(emitter, sessionId, lockKey, userContent, fullReply.toString())
                     );
 
             emitter.onTimeout(() -> {
@@ -159,7 +170,7 @@ public class InterviewServiceImpl implements InterviewService {
         } catch (RuntimeException e) {
             // 锁已经拿到了,但订阅模型流之前的这几步(取历史、落库、消息角色转换……)只要有一步抛异常,
             // 后面负责释放锁的几条路径(onStreamComplete/onStreamError/onTimeout/onError)都不会被触发,
-            // 这里必须自己把锁放掉,不然要等 60 秒 TTL 到期,这场会话在此期间没法再发消息
+            // 这里必须自己把锁放掉,不然要等 300 秒 TTL 到期,这场会话在此期间没法再发消息
             stringRedisTemplate.delete(lockKey);
             throw e;
         }
@@ -207,7 +218,13 @@ public class InterviewServiceImpl implements InterviewService {
         InterviewSession session = mustFindOwnSession(sessionId);
         // 幂等短路:报告已经生成过,直接返回已有的,不再调模型(放在抢锁之前,不用为它付一次 Redis 往返)
         if(session.getStatus() == 2){
-            return toReportVO(interviewReportMapper.selectBySessionId(sessionId));
+            InterviewReport report = interviewReportMapper.selectBySessionId(sessionId);
+            //status=2 却查不到报告 = 数据不一致(比如被手工删了),别让 toReportVO(null) NPE
+            if(report == null){
+                // 数据不一致(报告行被手工删等),不是 AI 调用的问题,用系统错误码更贴切
+                throw new BusinessException(ErrorCode.SYSTEM_ERROR,"报告数据异常，请联系管理员");
+            }
+            return toReportVO(report);
         }
         // 和 chat 用同一把会话锁:结束面试和继续对话不能同时进行,
         // 不然 finish 拼对话记录时可能刚好错过 chat 还没落库的最后一条回复
@@ -217,6 +234,11 @@ public class InterviewServiceImpl implements InterviewService {
             throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"会话正在处理中，请稍后再试");
         }
         try {
+            InterviewReport existing = interviewReportMapper.selectBySessionId(sessionId);
+            if(existing !=null){
+                interviewSessionMapper.finishSession(sessionId);
+                return toReportVO(existing);
+            }
             // 先把"已结束"落实(0→1),再调模型——模型调用失败状态也停在 1,不会出现"点了结束还能聊"
             if(session.getStatus() == 0){
                 interviewSessionMapper.updateStatus(sessionId,1);
@@ -229,9 +251,8 @@ public class InterviewServiceImpl implements InterviewService {
             report.setScore(result.score());
             report.setContent(serializeReportContent(result));
             interviewReportMapper.insert(report);
-            interviewSessionMapper.updateStatus(sessionId,2);
-
-            return toReportVO(report);
+            interviewSessionMapper.finishSession(sessionId);
+            return toReportVO(interviewReportMapper.selectBySessionId(sessionId));
         }finally {
             stringRedisTemplate.delete(lockKey);
         }
@@ -242,11 +263,24 @@ public class InterviewServiceImpl implements InterviewService {
     private InterviewReportResult generateReportWithRetry(String transcript) {
         for(int attempt = 1;attempt <=2;attempt++){
             try{
-                return chatClient.prompt()
+                InterviewReportResult result = chatClient
+                        .prompt()
                         .system(buildJudgePrompt())
                         .user(transcript)
                         .call()
                         .entity(InterviewReportResult.class);
+                // 模型可能返回缺字段的 JSON:score 为 null 撞库里 NOT NULL,
+                // highlights/weaknesses/summary 为 null 会让 serializeReportContent 的 Map.of 抛 NPE。
+                // 四个字段任一为空都当成"这次没解析出合法报告",抛出去触发重试,而不是等落库才 500。
+                if(result == null
+                        || result.score() == null
+                        || result.highlights() == null
+                        || result.weaknesses() == null
+                        || result.summary() == null
+                ){
+                    throw new IllegalStateException("模型返回的报告字段不完整");
+                }
+                return result;
             }catch (Exception e){
                 log.warn("评价报告生成第{}次尝试失败",attempt,e);
             }
@@ -306,11 +340,22 @@ public class InterviewServiceImpl implements InterviewService {
         }
         return vo;
     }
-    private void onStreamError(SseEmitter emitter, String lockKey, Throwable error) {
-        log.error("AI 流失调用失败",error);
-        sendEvent(emitter,Map.of("type","error","message","AI服务异常，请稍后重试"));
-        emitter.completeWithError(error);
-        stringRedisTemplate.delete(lockKey);
+    private void onStreamError(SseEmitter emitter, Long sessionId, String lockKey,
+                               String userContent, String fullReply, Throwable error) {
+        log.error("AI 流式调用失败", error);
+        try {
+            // 中途失败但已吐了半截:前端会保留这半截气泡,后端也要把「用户这轮 + 半截回复」成对存下来,
+            // 保持"前端看到的 = 后端记得的";一个字都没吐(fullReply 空)就什么都不写,前端也会删空气泡、标失败,两边一致。
+            if (!fullReply.isEmpty()) {
+                persistTurn(sessionId, userContent, fullReply);
+            }
+        } catch (Exception e) {
+            log.error("流式失败后落库也失败:sessionId={}", sessionId, e);
+        } finally {
+            sendEvent(emitter, Map.of("type", "error", "message", "AI服务异常，请稍后重试"));
+            emitter.completeWithError(error);
+            stringRedisTemplate.delete(lockKey);
+        }
     }
 
     private void sendEvent(SseEmitter emitter, Map<String, Object> payload) {
@@ -323,16 +368,31 @@ public class InterviewServiceImpl implements InterviewService {
         }
     }
 
-    private void onStreamComplete(SseEmitter emitter, Long sessionId, String lockKey, String fullReply) {
+    private void onStreamComplete(SseEmitter emitter, Long sessionId, String lockKey, String userContent, String fullReply) {
         try {
-            InterviewMessage assistantMsg = buildMessage(sessionId,"assistant",fullReply);
-            interviewMessageMapper.insert(assistantMsg);
-            contextManager.append(sessionId,assistantMsg);
-            sendEvent(emitter,Map.of("type","done","messageId",assistantMsg.getId()));
+            InterviewMessage assistantMsg = persistTurn(sessionId, userContent, fullReply);
+            sendEvent(emitter, Map.of("type", "done", "messageId", assistantMsg.getId()));
             emitter.complete();
-        }finally {
+        } catch (Exception e) {
+            // 落库失败也要把流关掉并告诉前端,否则 emitter 既不 complete 也不发 error,前端 reader 永远挂着
+            log.error("流式完成后落库失败:sessionId={}", sessionId, e);
+            sendEvent(emitter, Map.of("type", "error", "message", "回复保存失败，请重试"));
+            emitter.completeWithError(e);
+        } finally {
             stringRedisTemplate.delete(lockKey);
         }
+    }
+
+    // 把「用户提问 + AI 回复」成对落库 + 进上下文。user 先 insert、assistant 后 insert,id 自增保证历史顺序。
+    private InterviewMessage persistTurn(Long sessionId, String userContent, String reply) {
+        InterviewMessage userMsg = buildMessage(sessionId, "user", userContent);
+        interviewMessageMapper.insert(userMsg);
+        contextManager.append(sessionId, userMsg);
+
+        InterviewMessage assistantMsg = buildMessage(sessionId, "assistant", reply);
+        interviewMessageMapper.insert(assistantMsg);
+        contextManager.append(sessionId, assistantMsg);
+        return assistantMsg;
     }
 
     private InterviewSession mustFindOwnSession(Long sessionId) {

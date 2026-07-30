@@ -40,4 +40,10 @@
         SET status = #{status}
         WHERE id = #{id} AND is_deleted = 0
     </update>
+
+    <update id="finishSession">
+        UPDATE interview_session
+        SET status = 2, end_time = NOW()
+        WHERE id = #{id} AND is_deleted = 0
+    </update>
 </mapper>

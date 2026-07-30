@@ -64,9 +64,11 @@ async function submitAnswer() {
   waitingReply.value = true
   scrollToBottom()
 
-  // 先占一个空的 assistant 气泡,delta 事件到达时往里追加文字,打字机效果
-  const assistantTurn: ChatTurn = { role: 'assistant', content: '' }
-  transcript.value.push(assistantTurn)
+  // 先占一个空的 assistant 气泡,delta 事件到达时往里追加文字,打字机效果。
+  // 注意:push 进响应式数组后,数组里存的是这个对象的「响应式代理」;必须把代理引用取回来再改,
+  // 直接改 push 之前的原始对象不会触发视图更新(delta 收到了但页面气泡不刷新——打字机效果失效)。
+  transcript.value.push({ role: 'assistant', content: '' })
+  const assistantTurn = transcript.value[transcript.value.length - 1]
 
   await chatInterviewStream(requestSessionId, content, {
     onDelta: (delta) => {

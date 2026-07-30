@@ -3,11 +3,14 @@ package com.zhimian.exception;
 import com.zhimian.common.ErrorCode;
 import com.zhimian.common.Result;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.retry.NonTransientAiException;
+import org.springframework.ai.retry.TransientAiException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.client.RestClientException;
 
 /**
  * 全局异常处理器:所有异常在这里统一转成 Result 格式
@@ -52,5 +55,11 @@ public class GlobalExceptionHandler {
     public Result<Void> handleException(Exception e) {
         log.error("系统异常", e);
         return Result.error(ErrorCode.SYSTEM_ERROR);
+    }
+
+    @ExceptionHandler({NonTransientAiException.class, TransientAiException.class, RestClientException.class})
+    public Result<Void> handleAiException(Exception e){
+        log.error("AI服务调用失败",e);
+        return Result.error(ErrorCode.AI_SERVICE_ERROR);
     }
 }
