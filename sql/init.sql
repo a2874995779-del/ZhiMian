@@ -100,6 +100,18 @@ CREATE TABLE `wrong_question` (
   KEY `idx_user_status_time` (`user_id`, `status`, `last_wrong_time`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '用户错题本';
 
+-- 用户收藏题目
+CREATE TABLE `question_favorite` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `user_id` BIGINT NOT NULL,
+  `question_id` BIGINT NOT NULL,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_question` (`user_id`, `question_id`),
+  KEY `idx_user_time` (`user_id`, `create_time`),
+  KEY `idx_question_id` (`question_id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '题目收藏表';
+
 -- ============ 阶段二:AI 模拟面试(任务 2.2~2.6)============
 
 -- AI 面试会话表

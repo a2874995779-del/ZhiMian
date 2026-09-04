@@ -65,6 +65,31 @@ function continueInterview(id: number) {
   router.push({ path: '/interview', query: { sessionId: id } })
 }
 
+function stopReportPolling() {
+  if (reportTimer !== null) {
+    window.clearInterval(reportTimer)
+    reportTimer = null
+  }
+}
+
+async function pollReport(id: number) {
+  try {
+    const status = await getReportStatus(id)
+    reportMessage.value = status.message || ''
+    if (status.status === 1 && status.report) {
+      drawerReport.value = status.report
+      stopReportPolling()
+      await refresh()
+    } else if (status.status === 2) {
+      stopReportPolling()
+    }
+  } catch {
+    stopReportPolling()
+  }
+}
+
+onUnmounted(stopReportPolling)
+
 async function openDetail(item: InterviewSessionListVO) {
   drawerVisible.value = true
   detail.value = null
@@ -160,6 +185,9 @@ async function loadReport(id: number) {
             {{ STATUS_META[detail.status].label }}
           </span>
           <span class="drawer-time">{{ formatDateTime(detail.createTime) }}</span>
+          <el-button v-if="detail.status === 0" text type="primary" @click="continueInterview(detail.id)">
+            继续面试
+          </el-button>
         </header>
 
         <!-- 报告区 -->
@@ -167,7 +195,7 @@ async function loadReport(id: number) {
           <ReportCard :report="drawerReport" />
         </div>
         <div v-else-if="detail.status !== 2" class="drawer-report-cta">
-          <span>{{ detail.status === 0 ? '这场面试还没结束' : '这场面试还没生成评价' }}</span>
+          <span>{{ reportMessage || (detail.status === 0 ? '这场面试还没结束' : '这场面试还没生成评价') }}</span>
           <el-button type="primary" :loading="reportLoading" @click="loadReport(detail.id)">
             {{ detail.status === 0 ? '结束并生成评价' : '生成评价报告' }}
           </el-button>

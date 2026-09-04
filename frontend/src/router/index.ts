@@ -36,6 +36,18 @@ const router = createRouter({
       meta: { label: '面试记录', icon: 'history', requiresAuth: true },
     },
     {
+      path: '/wrong-questions',
+      name: 'wrong-questions',
+      component: () => import('../views/WrongQuestions.vue'),
+      meta: { label: '错题本', icon: 'wrong', requiresAuth: true },
+    },
+    {
+      path: '/favorites',
+      name: 'favorites',
+      component: () => import('../views/Favorites.vue'),
+      meta: { label: '收藏夹', icon: 'favorites', requiresAuth: true },
+    },
+    {
       path: '/profile',
       name: 'profile',
       component: () => import('../views/ComingSoon.vue'),

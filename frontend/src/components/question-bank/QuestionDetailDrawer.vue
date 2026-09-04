@@ -1,14 +1,68 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Star, StarFilled } from '@element-plus/icons-vue'
+import { addFavorite, checkFavorite, removeFavorite } from '../../api/favorite'
+import { useAuthStore } from '../../stores/auth'
 import type { QuestionDetail } from '../../types/question'
 import MockCodeBlock from './MockCodeBlock.vue'
 
-defineProps<{
+const props = defineProps<{
   modelValue: boolean
   question: QuestionDetail | null
 }>()
-defineEmits<{ 'update:modelValue': [value: boolean] }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: boolean]
+  'favorite-changed': [favorited: boolean]
+}>()
 
 const difficultyLabel: Record<number, string> = { 1: '简单', 2: '中等', 3: '困难' }
+const auth = useAuthStore()
+const favorited = ref(false)
+const favoriteLoading = ref(false)
+
+async function loadFavoriteState() {
+  if (!props.modelValue || !props.question || !auth.token) {
+    favorited.value = false
+    return
+  }
+
+  const questionId = props.question.id
+  favoriteLoading.value = true
+  try {
+    const state = await checkFavorite(questionId)
+    if (props.question?.id === questionId) {
+      favorited.value = state
+    }
+  } finally {
+    favoriteLoading.value = false
+  }
+}
+
+async function toggleFavorite() {
+  if (!props.question || !auth.token || favoriteLoading.value) return
+
+  const questionId = props.question.id
+  favoriteLoading.value = true
+  try {
+    if (favorited.value) {
+      await removeFavorite(questionId)
+    } else {
+      await addFavorite(questionId)
+    }
+    favorited.value = !favorited.value
+    emit('favorite-changed', favorited.value)
+    ElMessage.success(favorited.value ? '已加入收藏夹' : '已取消收藏')
+  } finally {
+    favoriteLoading.value = false
+  }
+}
+
+watch(
+  () => [props.question?.id, props.modelValue, auth.token],
+  loadFavoriteState,
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -22,10 +76,22 @@ const difficultyLabel: Record<number, string> = { 1: '简单', 2: '中等', 3: '
   >
     <div v-if="question" class="detail">
       <header class="detail-header">
-        <div class="detail-meta">
-          <span class="zm-tag zm-tag--active">{{ question.categoryName }}</span>
-          <span class="zm-tag">{{ difficultyLabel[question.difficulty] }}</span>
-          <span v-for="tag in question.tags" :key="tag" class="zm-tag">{{ tag }}</span>
+        <div class="detail-header-row">
+          <div class="detail-meta">
+            <span class="zm-tag zm-tag--active">{{ question.categoryName }}</span>
+            <span class="zm-tag">{{ difficultyLabel[question.difficulty] }}</span>
+            <span v-for="tag in question.tags" :key="tag" class="zm-tag">{{ tag }}</span>
+          </div>
+          <el-button
+            v-if="auth.token"
+            text
+            :type="favorited ? 'warning' : 'primary'"
+            :icon="favorited ? StarFilled : Star"
+            :loading="favoriteLoading"
+            @click="toggleFavorite"
+          >
+            {{ favorited ? '已收藏' : '收藏' }}
+          </el-button>
         </div>
         <h2 class="detail-title">{{ question.title }}</h2>
       </header>
@@ -61,6 +127,13 @@ const difficultyLabel: Record<number, string> = { 1: '简单', 2: '中等', 3: '
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.detail-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   margin-bottom: 14px;
 }
 
@@ -113,6 +186,11 @@ const difficultyLabel: Record<number, string> = { 1: '简单', 2: '中等', 3: '
 @media (max-width: 860px) {
   .detail-body {
     grid-template-columns: 1fr;
+  }
+
+  .detail-header-row {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

@@ -1,7 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Grid, Reading, Trophy, Microphone, User, Moon, Sunny, SwitchButton, Clock } from '@element-plus/icons-vue'
+import {
+  Clock,
+  Grid,
+  Microphone,
+  Moon,
+  Notebook,
+  Reading,
+  Star,
+  Sunny,
+  SwitchButton,
+  Trophy,
+  User,
+} from '@element-plus/icons-vue'
 import { useAuthStore } from '../../stores/auth'
 import LoginDialog from './LoginDialog.vue'
 
@@ -16,6 +28,8 @@ const navIcons: Record<string, any> = {
   trophy: Trophy,
   mic: Microphone,
   history: Clock,
+  wrong: Notebook,
+  favorites: Star,
   user: User,
 }
 
