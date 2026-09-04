@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { type AxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 
 // 后端统一返回体 { code, message, data },code=0 为成功
@@ -46,3 +46,19 @@ http.interceptors.response.use(
 )
 
 export default http
+
+export function get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  return http.get(url, config) as Promise<T>
+}
+
+export function post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  return http.post(url, data, config) as Promise<T>
+}
+
+export function put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+  return http.put(url, data, config) as Promise<T>
+}
+
+export function del<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  return http.delete(url, config) as Promise<T>
+}

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import ReportCard from '../components/interview/ReportCard.vue'
 import LoginDialog from '../components/layout/LoginDialog.vue'
 import { useAuthStore } from '../stores/auth'
-import { finishInterview, getInterviewDetail, listInterviews } from '../api/interview'
+import { finishInterview, getInterviewDetail, getReportStatus, listInterviews } from '../api/interview'
 import { STATUS_META, directionLabel } from '../types/interview'
 import type {
   InterviewReportVO,
@@ -13,6 +14,7 @@ import type {
 import { formatDateTime } from '../utils/format'
 
 const auth = useAuthStore()
+const router = useRouter()
 const loginDialogVisible = ref(false)
 
 const sessions = ref<InterviewSessionListVO[]>([])
@@ -56,6 +58,12 @@ const detail = ref<InterviewSessionDetailVO | null>(null)
 const detailLoading = ref(false)
 const drawerReport = ref<InterviewReportVO | null>(null)
 const reportLoading = ref(false)
+const reportMessage = ref('')
+let reportTimer: number | null = null
+
+function continueInterview(id: number) {
+  router.push({ path: '/interview', query: { sessionId: id } })
+}
 
 async function openDetail(item: InterviewSessionListVO) {
   drawerVisible.value = true
@@ -67,7 +75,7 @@ async function openDetail(item: InterviewSessionListVO) {
     // 已评价的会话顺带把报告取出来展示。后端没有单独的"查报告"接口,
     // 但 finish 对 status=2 是幂等只读(直接返回已存报告,不重新调模型),拿来读正好。
     if (detail.value.status === 2) {
-      await loadReport(item.id)
+      await pollReport(item.id)
     }
   } finally {
     detailLoading.value = false
@@ -78,8 +86,17 @@ async function openDetail(item: InterviewSessionListVO) {
 async function loadReport(id: number) {
   reportLoading.value = true
   try {
-    drawerReport.value = await finishInterview(id)
-    await refresh() // 状态可能从 进行中/已结束 变成 已评价,刷新列表让 badge 同步
+    const status = await finishInterview(id)
+    reportMessage.value = status.message || ''
+    if (status.status === 1 && status.report) {
+      drawerReport.value = status.report
+      await refresh()
+      return
+    }
+    stopReportPolling()
+    reportTimer = window.setInterval(() => {
+      void pollReport(id)
+    }, 2000)
   } catch {
     // http.ts 拦截器已统一提示
   } finally {

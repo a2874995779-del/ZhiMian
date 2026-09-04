@@ -6,4 +6,40 @@
         INSERT INTO answer_record (user_id,question_id,result)
         VALUES (#{userId},#{questionId},#{result})
     </insert>
+
+    <select id="countCorrectByUser" resultType="int">
+        SELECT COUNT(*)
+        FROM answer_record
+        WHERE user_id = #{userId}
+          AND result = 1
+    </select>
+
+    <select id="countCorrectByUserBetween" resultType="int">
+        SELECT COUNT(*)
+        FROM answer_record
+        WHERE user_id = #{userId}
+          AND result = 1
+          AND create_time &gt;= #{start}
+          AND create_time &lt; #{end}
+    </select>
+
+    <select id="selectDailyStats" resultType="com.zhimian.model.dto.AnswerDailyStatDTO">
+        SELECT DATE(create_time) AS answer_date,
+               COUNT(*) AS total_count,
+               SUM(CASE WHEN result = 1 THEN 1 ELSE 0 END) AS correct_count
+        FROM answer_record
+        WHERE user_id = #{userId}
+          AND create_time &gt;= #{start}
+          AND create_time &lt; #{end}
+        GROUP BY DATE(create_time)
+        ORDER BY answer_date ASC
+    </select>
+
+    <select id="selectCorrectDates" resultType="java.time.LocalDate">
+        SELECT DISTINCT DATE(create_time)
+        FROM answer_record
+        WHERE user_id = #{userId}
+          AND result = 1
+        ORDER BY DATE(create_time) DESC
+    </select>
 </mapper>

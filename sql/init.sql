@@ -83,6 +83,23 @@ CREATE TABLE `answer_record` (
   KEY `idx_question_id` (`question_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '答题记录表';
 
+-- 用户错题本
+CREATE TABLE `wrong_question` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `user_id` BIGINT NOT NULL,
+  `question_id` BIGINT NOT NULL,
+  `wrong_count` INT NOT NULL DEFAULT 0,
+  `correct_count` INT NOT NULL DEFAULT 0,
+  `status` TINYINT NOT NULL DEFAULT 0 COMMENT '0-未掌握 1-已掌握',
+  `last_wrong_time` DATETIME DEFAULT NULL,
+  `last_review_time` DATETIME DEFAULT NULL,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_user_question` (`user_id`, `question_id`),
+  KEY `idx_user_status_time` (`user_id`, `status`, `last_wrong_time`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '用户错题本';
+
 -- ============ 阶段二:AI 模拟面试(任务 2.2~2.6)============
 
 -- AI 面试会话表
@@ -116,9 +133,12 @@ CREATE TABLE `interview_message` (
 CREATE TABLE `interview_report` (
   `id`          BIGINT   NOT NULL AUTO_INCREMENT,
   `session_id`  BIGINT   NOT NULL COMMENT '会话 id',
-  `score`       INT      NOT NULL COMMENT '总分 0-100',
-  `content`     JSON     NOT NULL COMMENT '结构化报告:亮点/薄弱点/总评',
+  `score`       INT      DEFAULT NULL COMMENT 'score 0-100, nullable while generating',
+  `content`     JSON     DEFAULT NULL COMMENT 'report json, nullable while generating',
+  `status`      TINYINT  NOT NULL DEFAULT 0 COMMENT '0-generating 1-success 2-failed',
+  `error_message` VARCHAR(255) DEFAULT NULL COMMENT 'generation error message',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_session_id` (`session_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '面试评价报告表';

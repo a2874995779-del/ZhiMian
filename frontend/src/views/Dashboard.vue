@@ -1,18 +1,48 @@
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowRight, TrendCharts, Flag } from '@element-plus/icons-vue'
+import { fetchDashboard } from '../api/dashboard'
 import ProgressRing from '../components/dashboard/ProgressRing.vue'
 import TrendChart from '../components/dashboard/TrendChart.vue'
-import { dashboardStats } from '../mock/dashboard'
+import type { DashboardStats } from '../types/dashboard'
 
 const router = useRouter()
-const stats = dashboardStats
-const progressPercent = Math.round((stats.today.done / stats.today.goal) * 100)
+const stats = ref<DashboardStats | null>(null)
+const loading = ref(false)
+const errorMessage = ref('')
+
+const progressPercent = computed(() => {
+  if (!stats.value || stats.value.today.goal <= 0) return 0
+  return Math.min(100, Math.round((stats.value.today.done / stats.value.today.goal) * 100))
+})
+
+async function loadDashboard() {
+  loading.value = true
+  errorMessage.value = ''
+  try {
+    stats.value = await fetchDashboard()
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : '仪表盘加载失败'
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadDashboard)
 </script>
 
 <template>
-  <div class="dashboard">
-    <div class="bento">
+  <div class="dashboard" v-loading="loading">
+    <el-result v-if="!loading && errorMessage" icon="warning" :title="errorMessage">
+      <template #extra>
+        <el-button type="primary" @click="loadDashboard">重新加载</el-button>
+      </template>
+    </el-result>
+
+    <el-empty v-else-if="!loading && !stats" description="登录后会展示你的学习进度" />
+
+    <div v-else-if="stats" class="bento">
       <!-- 模块 A:今日学习状态 -->
       <section class="cell cell--ring zm-glass zm-glass--hoverable">
         <p class="cell-eyebrow zm-prompt">&gt; today</p>
@@ -25,7 +55,7 @@ const progressPercent = Math.round((stats.today.done / stats.today.goal) * 100)
         <div class="cell-head">
           <div>
             <p class="cell-eyebrow zm-prompt">&gt; weekly_index</p>
-            <h3>面试通过概率趋势</h3>
+            <h3>本周答题正确率趋势</h3>
           </div>
           <el-icon class="cell-head-icon"><TrendCharts /></el-icon>
         </div>

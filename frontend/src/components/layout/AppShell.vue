@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Grid, Reading, Trophy, Microphone, User, Moon, Sunny, SwitchButton, Clock } from '@element-plus/icons-vue'
 import { useAuthStore } from '../../stores/auth'
@@ -49,6 +49,38 @@ onMounted(() => {
   }
   applyTheme()
 })
+
+watch(
+  () => route.query.login,
+  (login) => {
+    if (login === '1' && !auth.user) {
+      loginDialogVisible.value = true
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => auth.token,
+  (token) => {
+    if (!token) {
+      if (route.meta.requiresAuth) {
+        router.replace({
+          path: '/questions',
+          query: {
+            login: '1',
+            redirect: route.fullPath,
+          },
+        })
+      }
+      return
+    }
+    const redirect = route.query.redirect
+    if (typeof redirect === 'string' && redirect.startsWith('/')) {
+      router.replace(redirect)
+    }
+  },
+)
 
 const greeting = computed(() => {
   const h = new Date().getHours()

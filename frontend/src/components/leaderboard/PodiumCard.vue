@@ -34,14 +34,14 @@ const placeMeta = computed(() => {
     <h3 class="podium-name">{{ user.nickname }}</h3>
 
     <p class="podium-power">
-      {{ user.power.toLocaleString() }}
-      <span class="podium-power-unit">战力</span>
+      {{ user.count.toLocaleString() }}
+      <span class="podium-power-unit">题答对</span>
     </p>
 
     <div class="podium-stats">
-      <span>{{ user.solved }} 题通关</span>
+      <span>{{ user.badges[0] }}</span>
       <span class="stat-divider"></span>
-      <span>胜率 {{ user.winRate }}%</span>
+      <span>第 {{ user.rank }} 名</span>
     </div>
   </article>
 </template>

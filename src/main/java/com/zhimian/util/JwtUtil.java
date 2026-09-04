@@ -22,6 +22,7 @@ public class JwtUtil {
      * 签发 token
      * @param userId 用户 id,存入 subject(sub)
      * @param role   角色,存入自定义 claim,供拦截器做权限判断
+     *               生成一个带有用户 ID、角色、签发时间和过期时间，并使用密钥签名的 JWT Token
      */
     public String generateToken(Long userId,String role) {
         SecretKey key = Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes());

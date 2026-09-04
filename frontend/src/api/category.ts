@@ -1,4 +1,4 @@
-import http from './http'
+import { get } from './http'
 
 export interface CategoryNode {
   id: number
@@ -7,5 +7,5 @@ export interface CategoryNode {
 }
 
 export function fetchCategoryTree(): Promise<CategoryNode[]> {
-  return http.get('/categories') as unknown as Promise<CategoryNode[]>
+  return get<CategoryNode[]>('/categories')
 }

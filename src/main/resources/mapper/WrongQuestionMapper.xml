@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhimian.mapper.WrongQuestionMapper">
+    <insert id="recordWrong">
+        INSERT INTO wrong_question (user_id,question_id,wrong_count,status,last_wrong_time)
+        VALUES (#{userId},#{questionId},1,0,NOW())
+        ON DUPLICATE KEY UPDATE
+            wrong_count = wrong_count+1,
+            status = 0,
+            last_wrong_time = NOW(),
+            update_time=NOW()
+    </insert>
+
+    <update id="recordCorrect">
+        UPDATE wrong_question
+        SET correct_count = correct_count + 1,
+            last_review_time = NOW(),
+            update_time = NOW()
+        WHERE user_id = #{userId}
+        AND question_id =#{questionId}
+    </update>
+
+    <select id="countByUser" resultType="long">
+        SELECT COUNT(*)
+        FROM wrong_question wq
+        JOIN question q
+        ON q.id = wq.question_id
+        AND q.is_deleted = 0
+        LEFT JOIN category c
+        ON c.id = q.category_id
+        <include refid="wrongQuestionWhere"/>
+    </select>
+
+    <sql id="wrongQuestionWhere">
+        WHERE wq.user_id = #{userId}
+        <if test="query.status !=null">
+            AND wq.status = #{query.status}
+        </if>
+        <if test="query.categoryId != null">
+            AND q.category_id = #{query.categoryId}
+        </if>
+        <if test="query.keyword != null and query.keyword != ''">
+            AND q.title LIKE CONCAT('%',#{query.keyword},'%')
+        </if>
+    </sql>
+
+    <select id="selectPage" resultType="com.zhimian.model.vo.WrongQuestionVO">
+        SELECT wq.id,
+               wq.question_id,
+               q.title,
+               q.difficulty,
+               q.category_id,
+               c.name AS category_name,
+               wq.wrong_count,
+               wq.correct_count,
+               wq.status,
+               wq.last_wrong_time,
+               wq.last_review_time
+        FROM wrong_question wq
+        JOIN question q ON q.id = wq.question_id AND q.is_deleted = 0
+        LEFT JOIN category c ON c.id = q.category_id
+        <include refid="wrongQuestionWhere"/>
+        ORDER BY wq.status ASC,wq.last_wrong_time DESC
+        LIMIT #{offset},#{query.pageSize}
+    </select>
+
+    <update id="markMastered">
+        UPDATE wrong_question
+        SET status = 1,
+            last_review_time = NOW(),
+            update_time = NOW()
+        WHERE user_id = #{userId}
+          AND question_id = #{questionId}
+    </update>
+    <update id="markUnmastered">
+        UPDATE wrong_question
+        SET status = 0,
+            update_time = NOW()
+        WHERE user_id = #{userId}
+        AND question_id = #{questionId}
+    </update>
+
+    <delete id="deleteByUserAndQuestion">
+        DELETE FROM wrong_question
+        WHERE user_id = #{userId}
+        AND question_id =#{questionId}
+    </delete>
+</mapper>

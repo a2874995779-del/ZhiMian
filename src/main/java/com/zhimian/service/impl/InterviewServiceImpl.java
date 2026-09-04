@@ -30,17 +30,19 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
 import com.fasterxml.jackson.core.type.TypeReference;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
-
+import java.util.concurrent.Executor;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -60,7 +62,8 @@ public class InterviewServiceImpl implements InterviewService {
     private final InterviewContextManager contextManager;
     private final InterviewReportMapper interviewReportMapper;
     private final ObjectMapper objectMapper;
-
+    @Qualifier("reportExecutor")
+    private final Executor reportExecutor;
 
     @Override
     public InterviewSessionVO createInterview(CreateInterviewDTO dto) {
@@ -84,20 +87,7 @@ public class InterviewServiceImpl implements InterviewService {
         // 整个方法没有加 @Transactional,就是不想让数据库连接陪着这次外部调用一起等
 
         String systemPrompt = buildSystemPrompt(direction);
-        String openingMessage;
-        try {
-            openingMessage = chatClient.prompt()
-                    .system(systemPrompt)
-                    .user("请开始这场模拟面试：先用一两句话做简短的自我介绍，然后直接提出第一个问题")
-                    .call()
-                    .content();
-        }catch (Exception e){
-            // session 已经建好了,这里选择不做任何补偿(不删 session、不标记失败状态)。
-            // 这次任务的验收范围到这里就够了:知道"为什么不能在事务里调 AI"是重点,
-            // "开场白生成失败要不要提供重试接口"留给后面任务或者你自己课后思考
-            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR,"开场白生成失败，请稍后再试");
-        }
-
+        String openingMessage = buildFastOpeningMessage(direction);
         InterviewMessage systemMsg = buildMessage(session.getId(),"system",systemPrompt);
         InterviewMessage assistantMsg = buildMessage(session.getId(),"assistant",openingMessage);
         interviewMessageMapper.insert(systemMsg);
@@ -110,6 +100,23 @@ public class InterviewServiceImpl implements InterviewService {
         vo.setDirection(direction.getCode());
         vo.setOpeningMessage(openingMessage);
         return vo;
+    }
+
+    private String buildFastOpeningMessage(InterviewDirection direction) {
+        return "你好，我是本场 " + direction.getLabel()
+                + " 方向的面试官。我们直接开始，先请你用自己的话回答: "
+                + firstQuestion(direction);
+    }
+
+    private String firstQuestion(InterviewDirection direction) {
+        return switch (direction.getCode()) {
+            case "java_concurrency" -> "线程池的核心参数有哪些？为什么不推荐直接使用 Executors 创建线程池？";
+            case "jvm" -> "你能从运行时数据区开始，整体讲一下 JVM 的内存模型吗？";
+            case "mysql" -> "MySQL 的 B+ 树索引为什么适合范围查询？";
+            case "redis" -> "Redis 常见的数据结构有哪些？你在项目里会怎么选择？";
+            case "system_design" -> "如果让你设计一个高并发排行榜服务，你会怎么设计读写链路？";
+            default -> "请介绍一个你最熟悉的技术点，并说明它在项目中的使用场景。";
+        };
     }
 
     @Override
@@ -214,50 +221,92 @@ public class InterviewServiceImpl implements InterviewService {
     }
 
     @Override
-    public InterviewReportVO finishInterview(Long sessionId) {
+    public InterviewReportStatusVO finishInterview(Long sessionId) {
         InterviewSession session = mustFindOwnSession(sessionId);
-        // 幂等短路:报告已经生成过,直接返回已有的,不再调模型(放在抢锁之前,不用为它付一次 Redis 往返)
-        if(session.getStatus() == 2){
-            InterviewReport report = interviewReportMapper.selectBySessionId(sessionId);
-            //status=2 却查不到报告 = 数据不一致(比如被手工删了),别让 toReportVO(null) NPE
-            if(report == null){
-                // 数据不一致(报告行被手工删等),不是 AI 调用的问题,用系统错误码更贴切
-                throw new BusinessException(ErrorCode.SYSTEM_ERROR,"报告数据异常，请联系管理员");
-            }
-            return toReportVO(report);
+
+        InterviewReport existing = interviewReportMapper.selectBySessionId(sessionId);
+        if (existing != null && Integer.valueOf(1).equals(existing.getStatus())) {
+            interviewSessionMapper.markReportReady(sessionId);
+            return buildReportStatus(existing);
         }
-        // 和 chat 用同一把会话锁:结束面试和继续对话不能同时进行,
-        // 不然 finish 拼对话记录时可能刚好错过 chat 还没落库的最后一条回复
+
         String lockKey = LOCK_PREFIX + sessionId;
-        Boolean locked = stringRedisTemplate.opsForValue().setIfAbsent(lockKey,"1",LOCK_TTL_SECONDS,TimeUnit.SECONDS);
-        if(!Boolean.TRUE.equals(locked)){
-            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"会话正在处理中，请稍后再试");
+        Boolean locked = stringRedisTemplate.opsForValue()
+                .setIfAbsent(lockKey, "1", LOCK_TTL_SECONDS, TimeUnit.SECONDS);
+        if (!Boolean.TRUE.equals(locked)) {
+            return buildGeneratingStatus("报告正在生成中，请稍候");
         }
+
         try {
-            InterviewReport existing = interviewReportMapper.selectBySessionId(sessionId);
-            if(existing !=null){
-                interviewSessionMapper.finishSession(sessionId);
-                return toReportVO(existing);
+            existing = interviewReportMapper.selectBySessionId(sessionId);
+            if (existing != null && Integer.valueOf(1).equals(existing.getStatus())) {
+                interviewSessionMapper.markReportReady(sessionId);
+                return buildReportStatus(existing);
             }
-            // 先把"已结束"落实(0→1),再调模型——模型调用失败状态也停在 1,不会出现"点了结束还能聊"
-            if(session.getStatus() == 0){
-                interviewSessionMapper.updateStatus(sessionId,1);
+            if (session.getStatus() == 0) {
+                interviewSessionMapper.endSession(sessionId);
+            }
+            interviewReportMapper.insertGenerating(sessionId);
+            CompletableFuture.runAsync(() -> generateReportJob(sessionId, lockKey), reportExecutor);
+            return buildGeneratingStatus("报告正在生成中，请稍候");
+        } catch (RuntimeException e) {
+            stringRedisTemplate.delete(lockKey);
+            throw e;
+        }
+    }
+
+    private void generateReportJob(Long sessionId, String lockKey) {
+        try {
+            InterviewReport report = interviewReportMapper.selectBySessionId(sessionId);
+            if(report != null && Integer.valueOf(1).equals(report.getStatus())){
+                interviewSessionMapper.markReportReady(sessionId);
+                return;
             }
             List<InterviewMessage> history = interviewMessageMapper.selectBySessionId(sessionId);
             InterviewReportResult result = generateReportWithRetry(buildTranscript(history));
-
-            InterviewReport report = new InterviewReport();
-            report.setSessionId(sessionId);
-            report.setScore(result.score());
-            report.setContent(serializeReportContent(result));
-            interviewReportMapper.insert(report);
-            interviewSessionMapper.finishSession(sessionId);
-            return toReportVO(interviewReportMapper.selectBySessionId(sessionId));
+            interviewReportMapper.markSuccess(
+                    sessionId,
+                    result.score(),
+                    serializeReportContent(result)
+            );
+            interviewSessionMapper.markReportReady(sessionId);
+        }catch (Exception e){
+            log.error("异步生成评价报告失败:sessionId={}",sessionId,e);
+            interviewReportMapper.markFailed(sessionId,"评价报告生成失败,请稍后再试");
         }finally {
             stringRedisTemplate.delete(lockKey);
         }
+    }
 
+    private InterviewReportStatusVO buildGeneratingStatus(String message) {
+        InterviewReportStatusVO vo = new InterviewReportStatusVO();
+        vo.setStatus(0);
+        vo.setMessage(message);
+        return vo;
+    }
 
+    private InterviewReportStatusVO buildReportStatus(InterviewReport report) {
+        InterviewReportStatusVO vo = new InterviewReportStatusVO();
+        vo.setStatus(report.getStatus());
+        if(Integer.valueOf(1).equals(report.getStatus())){
+            vo.setReport(toReportVO(report));
+            vo.setMessage("报告已生成");
+        }else if(Integer.valueOf(2).equals(report.getStatus())){
+            vo.setMessage(report.getErrorMessage() == null? "报告生成失败,请重试" : report.getErrorMessage());
+        }else {
+            vo.setMessage("报告正在生成中，请稍后");
+        }
+        return vo;
+    }
+
+    @Override
+    public InterviewReportStatusVO getReportStatus(Long sessionId) {
+        mustFindOwnSession(sessionId);
+        InterviewReport report = interviewReportMapper.selectBySessionId(sessionId);
+        if(report == null){
+            return buildGeneratingStatus("报告尚未开始生成");
+        }
+        return buildReportStatus(report);
     }
 
     private InterviewReportResult generateReportWithRetry(String transcript) {
@@ -327,6 +376,9 @@ public class InterviewServiceImpl implements InterviewService {
 
     @SuppressWarnings("unchecked")
     private InterviewReportVO toReportVO(InterviewReport report){
+        if(report == null || report.getContent() == null){
+            throw new BusinessException(ErrorCode.CONFLICT,"报告还未生成成功");
+        }
         InterviewReportVO vo = new InterviewReportVO();
         vo.setScore(report.getScore());
         vo.setCreateTime(report.getCreateTime());
@@ -427,11 +479,16 @@ public class InterviewServiceImpl implements InterviewService {
     private String buildSystemPrompt(InterviewDirection direction) {
         return """
                 你是一位经验丰富的 Java 后端资深面试官,正在对候选人进行一场专注于「%s」方向的技术面试。
-                                面试风格要求:
-                                1. 每次只问一个问题,不要一次性抛出多个问题。
-                                2. 根据候选人上一轮回答的质量动态调整下一个问题的深度——回答得好就继续追问细节,回答得含糊就换个角度重新问或给出提示。
-                                3. 语气专业、简洁,像真实面试官一样自然对话,不要用"好的,我们开始吧"这类机械化开场白,也不要每句话都用 Markdown 列表排版。
-                                4. 这场面试重点考察方向:%s。
-                """.formatted(direction.getLabel(),direction.getFocus());
+
+                这场面试需要考察以下几个维度:%s。
+
+                面试策略(重要):
+                1. 每次只问一个问题,不要一次性抛出多个问题。
+                2. 以广度为主、深度为辅:目标是在有限轮次里尽量覆盖上面列出的多个维度,系统地考察候选人的知识面,而不是抓着某一个点一直往深里追问。
+                3. 控制追问:对同一个知识点最多追问一次。无论这一点答得好不好,追问一次之后就要主动切换到一个还没考察过的维度,不要顺着候选人上一句话无限深挖。
+                4. 根据回答质量灵活调整:答得好,简短肯定一句就切换到新维度;答得含糊或答不上来,可以给一点提示或换个角度再问一次,仍答不上就换维度,别在一个点上僵持。
+                5. 心里记着已经问过哪些维度,有意识地让问题覆盖面铺开;等上面这些维度大多覆盖到了,再挑候选人答得最好或最薄弱的点做适度深入。
+                6. 语气专业、简洁,像真实面试官一样自然对话,不要用"好的,我们开始吧"这类机械化开场白,也不要每句话都用 Markdown 列表排版。
+                """.formatted(direction.getLabel(), direction.getFocus());
     }
 }

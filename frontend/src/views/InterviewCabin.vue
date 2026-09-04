@@ -1,28 +1,36 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, Promotion } from '@element-plus/icons-vue'
 import ExaminerAvatar from '../components/interview/ExaminerAvatar.vue'
 import ReportCard from '../components/interview/ReportCard.vue'
 import LoginDialog from '../components/layout/LoginDialog.vue'
 import { useAuthStore } from '../stores/auth'
-import { chatInterviewStream, createInterview, finishInterview } from '../api/interview'
+import { chatInterviewStream, createInterview, finishInterview, getInterviewDetail, getReportStatus } from '../api/interview'
 import { DIRECTION_OPTIONS } from '../types/interview'
-import type { ChatTurn, DirectionOption, InterviewReportVO } from '../types/interview'
+import type { ChatTurn, DirectionOption, InterviewReportVO, ReportStatus } from '../types/interview'
 
 const auth = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 const loginDialogVisible = ref(false)
 
-const phase = ref<'picking' | 'chatting' | 'report'>('picking')
+const phase = ref<'picking' | 'chatting' | 'generating-report' | 'report'>('picking')
 const creating = ref(false)
+const restoring = ref(false)
 const finishing = ref(false)
+const reportLoading = ref(false)
 const activeDirection = ref<DirectionOption | null>(null)
 const sessionId = ref<number | null>(null)
 const transcript = ref<ChatTurn[]>([])
 const answer = ref('')
 const waitingReply = ref(false)
 const report = ref<InterviewReportVO | null>(null)
+const reportMessage = ref('')
+const lastReportStatus = ref<ReportStatus | null>(null)
 const transcriptEl = ref<HTMLElement | null>(null)
+let reportTimer: number | null = null
 
 // 至少答过一轮(有一条用户消息)才让结束——否则一进来就结束,报告没内容可评
 const canFinish = computed(() => transcript.value.some((t) => t.role === 'user'))
@@ -31,6 +39,68 @@ async function scrollToBottom() {
   await nextTick()
   transcriptEl.value?.scrollTo({ top: transcriptEl.value.scrollHeight, behavior: 'smooth' })
 }
+
+function parseSessionId(value: unknown): number | null {
+  const id = Number(value)
+  return Number.isFinite(id) && id > 0 ? id : null
+}
+
+function directionOptionOf(code: string): DirectionOption | null {
+  return DIRECTION_OPTIONS.find((option) => option.code === code) ?? null
+}
+
+async function restoreSession(id: number) {
+  if (!auth.token || restoring.value) {
+    return
+  }
+  restoring.value = true
+  try {
+    const detail = await getInterviewDetail(id)
+    activeDirection.value = directionOptionOf(detail.direction)
+    sessionId.value = detail.id
+    transcript.value = detail.messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+    }))
+    localStorage.setItem('zm-active-interview-id', String(detail.id))
+
+    if (detail.status === 0) {
+      phase.value = 'chatting'
+      report.value = null
+      reportMessage.value = ''
+      lastReportStatus.value = null
+    } else {
+      phase.value = 'generating-report'
+      startReportPolling(detail.id)
+    }
+    scrollToBottom()
+  } finally {
+    restoring.value = false
+  }
+}
+
+onMounted(() => {
+  const queryId = parseSessionId(route.query.sessionId)
+  const cachedId = parseSessionId(localStorage.getItem('zm-active-interview-id'))
+  const id = queryId ?? cachedId
+  if (id) {
+    restoreSession(id)
+  }
+})
+
+watch(
+  () => auth.token,
+  (token) => {
+    if (!token) {
+      stopReportPolling()
+      return
+    }
+    const queryId = parseSessionId(route.query.sessionId)
+    if (queryId) {
+      restoreSession(queryId)
+    }
+  },
+)
 
 async function pickDirection(option: DirectionOption) {
   if (!auth.token) {
@@ -43,6 +113,8 @@ async function pickDirection(option: DirectionOption) {
     activeDirection.value = option
     sessionId.value = session.id
     transcript.value = [{ role: 'assistant', content: session.openingMessage }]
+    localStorage.setItem('zm-active-interview-id', String(session.id))
+    router.replace({ path: '/interview', query: { sessionId: session.id } })
     phase.value = 'chatting'
     scrollToBottom()
   } finally {
@@ -111,8 +183,18 @@ async function endInterview() {
   // 用户可以再点一次重试,所以这里失败就停在当前对话页,http.ts 已经弹过错误提示了。
   finishing.value = true
   try {
-    report.value = await finishInterview(sessionId.value)
-    phase.value = 'report'
+    const status = await finishInterview(sessionId.value)
+    lastReportStatus.value = status.status
+    reportMessage.value = status.message || ''
+    if (status.status === 1 && status.report) {
+      report.value = status.report
+      phase.value = 'report'
+      localStorage.removeItem('zm-active-interview-id')
+      stopReportPolling()
+    } else {
+      phase.value = 'generating-report'
+      startReportPolling(sessionId.value)
+    }
   } catch {
     // 已由 http.ts 拦截器统一提示,这里不重复弹
   } finally {
@@ -120,13 +202,56 @@ async function endInterview() {
   }
 }
 
+async function pollReport(id: number) {
+  reportLoading.value = true
+  try {
+    const status = await getReportStatus(id)
+    lastReportStatus.value = status.status
+    reportMessage.value = status.message || ''
+    if (status.status === 1 && status.report) {
+      report.value = status.report
+      phase.value = 'report'
+      localStorage.removeItem('zm-active-interview-id')
+      stopReportPolling()
+    } else if (status.status === 2) {
+      phase.value = 'generating-report'
+      localStorage.removeItem('zm-active-interview-id')
+      stopReportPolling()
+    }
+  } finally {
+    reportLoading.value = false
+  }
+}
+
+function startReportPolling(id: number) {
+  stopReportPolling()
+  void pollReport(id)
+  reportTimer = window.setInterval(() => {
+    void pollReport(id)
+  }, 2000)
+}
+
+function stopReportPolling() {
+  if (reportTimer !== null) {
+    window.clearInterval(reportTimer)
+    reportTimer = null
+  }
+}
+
+onUnmounted(stopReportPolling)
+
 function startNew() {
+  stopReportPolling()
   phase.value = 'picking'
   activeDirection.value = null
   sessionId.value = null
   transcript.value = []
   answer.value = ''
   report.value = null
+  reportMessage.value = ''
+  lastReportStatus.value = null
+  localStorage.removeItem('zm-active-interview-id')
+  router.replace({ path: '/interview' })
 }
 
 const examinerStatus = computed(() => (waitingReply.value ? '> 考官正在思考…' : '> 轮到你回答了'))
@@ -157,6 +282,20 @@ const examinerStatus = computed(() => (waitingReply.value ? '> 考官正在思�
           <p>{{ option.focus }}</p>
         </button>
       </div>
+    </template>
+
+    <template v-else-if="phase === 'generating-report'">
+      <section class="report-generating zm-glass" v-loading="reportLoading && lastReportStatus !== 2">
+        <p class="zm-prompt section-eyebrow">&gt; generating_report</p>
+        <h2>{{ lastReportStatus === 2 ? '评价报告生成失败' : '评价报告生成中' }}</h2>
+        <p>{{ reportMessage || 'AI 评委正在整理本场面试表现，请稍候。' }}</p>
+        <div class="report-actions">
+          <el-button v-if="sessionId" type="primary" :loading="finishing" @click="endInterview">
+            {{ lastReportStatus === 2 ? '重新生成' : '刷新状态' }}
+          </el-button>
+          <el-button @click="startNew">再来一场</el-button>
+        </div>
+      </section>
     </template>
 
     <!-- 评价报告 -->
@@ -358,6 +497,28 @@ const examinerStatus = computed(() => (waitingReply.value ? '> 考官正在思�
 
 .report-body {
   padding: 24px;
+}
+
+.report-generating {
+  max-width: 520px;
+  margin: 10vh auto 0;
+  padding: 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+
+.report-generating p {
+  font-size: 13px;
+  color: var(--zm-ink-soft);
+}
+
+.report-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
 }
 
 .chat-card {

@@ -1,32 +1,39 @@
-import http from './http'
+import { get, post } from './http'
 import type { PageResult } from './question'
 import type {
   ChatStreamEvent,
   InterviewDirectionCode,
-  InterviewReportVO,
+  InterviewReportStatusVO,
   InterviewSessionDetailVO,
   InterviewSessionListVO,
   InterviewSessionVO,
 } from '../types/interview'
 
+// 这两个接口会在后端同步触发 1~2 次大模型调用(生成开场白 / 生成评价报告),耗时远超 http.ts 的全局 10s 超时。
+// 若不单独放宽,axios 会在 10s 就 abort、前端弹"网络异常",而后端其实还在生成、会话锁还占着
+// (再点会显示"会话正在处理中",刷新后又发现报告已生成)。给它们一个足够长的超时,等真正的结果。
+const AI_CALL_TIMEOUT = 120000
+
 export function createInterview(direction: InterviewDirectionCode): Promise<InterviewSessionVO> {
-  return http.post('/interviews', { direction }) as unknown as Promise<InterviewSessionVO>
+  return post<InterviewSessionVO>('/interviews', { direction })
 }
 
 // 结束面试:后端会加载整场对话让模型生成一份结构化评价报告并返回。
 // 对已评价(status=2)的会话是幂等的——直接返回已存报告,不再重新调模型,所以也能拿来"查看历史报告"。
-export function finishInterview(sessionId: number): Promise<InterviewReportVO> {
-  return http.post(`/interviews/${sessionId}/finish`) as unknown as Promise<InterviewReportVO>
+export function finishInterview(sessionId: number): Promise<InterviewReportStatusVO> {
+  return post<InterviewReportStatusVO>(`/interviews/${sessionId}/finish`, null, { timeout: AI_CALL_TIMEOUT })
+}
+
+export function getReportStatus(sessionId: number): Promise<InterviewReportStatusVO> {
+  return get<InterviewReportStatusVO>(`/interviews/${sessionId}/report`)
 }
 
 export function listInterviews(pageNum: number, pageSize: number): Promise<PageResult<InterviewSessionListVO>> {
-  return http.get('/interviews', { params: { pageNum, pageSize } }) as unknown as Promise<
-    PageResult<InterviewSessionListVO>
-  >
+  return get<PageResult<InterviewSessionListVO>>('/interviews', { params: { pageNum, pageSize } })
 }
 
 export function getInterviewDetail(id: number): Promise<InterviewSessionDetailVO> {
-  return http.get(`/interviews/${id}`) as unknown as Promise<InterviewSessionDetailVO>
+  return get<InterviewSessionDetailVO>(`/interviews/${id}`)
 }
 
 export interface ChatStreamHandlers {

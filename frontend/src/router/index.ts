@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+const TOKEN_KEY = 'zm-token'
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -7,7 +9,7 @@ const router = createRouter({
       path: '/',
       name: 'dashboard',
       component: () => import('../views/Dashboard.vue'),
-      meta: { label: '仪表盘', icon: 'grid' },
+      meta: { label: '仪表盘', icon: 'grid', requiresAuth: true },
     },
     {
       path: '/questions',
@@ -25,21 +27,34 @@ const router = createRouter({
       path: '/interview',
       name: 'interview-cabin',
       component: () => import('../views/InterviewCabin.vue'),
-      meta: { label: '模拟面试舱', icon: 'mic' },
+      meta: { label: '模拟面试舱', icon: 'mic', requiresAuth: true },
     },
     {
       path: '/interview/history',
       name: 'interview-history',
       component: () => import('../views/InterviewHistory.vue'),
-      meta: { label: '面试记录', icon: 'history' },
+      meta: { label: '面试记录', icon: 'history', requiresAuth: true },
     },
     {
       path: '/profile',
       name: 'profile',
       component: () => import('../views/ComingSoon.vue'),
-      meta: { label: '成就中心', icon: 'user' },
+      meta: { label: '成就中心', icon: 'user', requiresAuth: true },
     },
   ],
+})
+
+router.beforeEach((to) => {
+  if (!to.meta.requiresAuth || localStorage.getItem(TOKEN_KEY)) {
+    return true
+  }
+  return {
+    path: '/questions',
+    query: {
+      login: '1',
+      redirect: to.fullPath,
+    },
+  }
 })
 
 export default router

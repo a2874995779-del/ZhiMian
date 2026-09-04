@@ -46,4 +46,21 @@
         SET status = 2, end_time = NOW()
         WHERE id = #{id} AND is_deleted = 0
     </update>
+
+    <update id="endSession">
+        UPDATE interview_session
+        SET status = 1,
+            end_time = IFNULL(end_time,NOW())
+        WHERE id=#{id}
+        AND is_deleted = 0
+        AND status = 0
+    </update>
+
+    <update id="markReportReady">
+        UPDATE interview_session
+        SET status =2,
+            end_time = IFNULL(end_time,NOW())
+        WHERE id =#{id}
+        AND is_deleted = 0
+    </update>
 </mapper>

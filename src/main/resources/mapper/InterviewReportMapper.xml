@@ -3,13 +3,36 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.zhimian.mapper.InterviewReportMapper">
     <insert id="insert" keyProperty="id" useGeneratedKeys="true">
-        INSERT INTO interview_report (session_id, score, content)
-        VALUES (#{sessionId}, #{score}, #{content})
+        INSERT INTO interview_report (session_id, score, content, status)
+        VALUES (#{sessionId}, #{score}, #{content}, 1)
     </insert>
 
+    <insert id="insertGenerating">
+        INSERT INTO interview_report (session_id, status)
+        VALUES (#{sessionId}, 0)
+            ON DUPLICATE KEY UPDATE
+            status = IF(status = 2, 0, status),
+            error_message = NULL
+    </insert>
     <select id="selectBySessionId" resultType="com.zhimian.model.entity.InterviewReport">
-        SELECT id, session_id, score, content, create_time
+        SELECT id,session_id,score,content,status,error_message,create_time,update_time
         FROM interview_report
         WHERE session_id = #{sessionId}
     </select>
+
+    <update id="markSuccess">
+        UPDATE interview_report
+        SET score = #{score},
+            content = #{content},
+            status = 1,
+            error_message = NULL
+        WHERE session_id = #{sessionId}
+    </update>
+
+    <update id="markFailed">
+        UPDATE interview_report
+        SET status = 2,
+            error_message = #{errorMessage}
+        WHERE session_id =#{sessionId}
+    </update>
 </mapper>

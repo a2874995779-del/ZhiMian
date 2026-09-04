@@ -1,4 +1,4 @@
-import http from './http'
+import { get } from './http'
 import type { QuestionDetail, QuestionListItem } from '../types/question'
 
 export interface PageResult<T> {
@@ -17,9 +17,9 @@ export interface QuestionPageParams {
 }
 
 export function fetchQuestionPage(params: QuestionPageParams): Promise<PageResult<QuestionListItem>> {
-  return http.get('/questions', { params }) as unknown as Promise<PageResult<QuestionListItem>>
+  return get<PageResult<QuestionListItem>>('/questions', { params })
 }
 
 export function fetchQuestionDetail(id: number): Promise<QuestionDetail> {
-  return http.get(`/questions/${id}`) as unknown as Promise<QuestionDetail>
+  return get<QuestionDetail>(`/questions/${id}`)
 }

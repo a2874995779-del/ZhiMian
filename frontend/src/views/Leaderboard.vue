@@ -1,32 +1,93 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Medal } from '@element-plus/icons-vue'
-import { rankUsers } from '../mock/leaderboard'
+import { computed, onMounted, ref } from 'vue'
+import { Medal, Refresh } from '@element-plus/icons-vue'
+import { fetchAnswerRanks, type RankType } from '../api/rank'
 import PodiumCard from '../components/leaderboard/PodiumCard.vue'
 import UserAvatar from '../components/leaderboard/UserAvatar.vue'
-import RadarChart from '../components/leaderboard/RadarChart.vue'
+import type { RankRecord, RankUser } from '../types/rank'
+
+const rankType = ref<RankType>('total')
+const rankUsers = ref<RankUser[]>([])
+const loading = ref(false)
+const errorMessage = ref('')
+const expandedUserId = ref<number | null>(null)
+
+function avatarHue(userId: number) {
+  return (userId * 47) % 360
+}
+
+function badgesFor(user: RankRecord) {
+  if (user.rank === 1) return ['当前榜首', '稳定输出']
+  if (user.rank <= 3) return ['前三名', '高频练习']
+  if (user.count >= 100) return ['百题斩', '持续积累']
+  if (user.count >= 30) return ['进阶中', '手感在线']
+  return ['正在起步']
+}
+
+function toRankUser(user: RankRecord): RankUser {
+  return {
+    rank: user.rank,
+    userId: user.userId,
+    nickname: user.nickname || `用户 ${user.userId}`,
+    avatarHue: avatarHue(user.userId),
+    count: user.count,
+    badges: badgesFor(user),
+  }
+}
+
+async function loadRanks() {
+  loading.value = true
+  errorMessage.value = ''
+  expandedUserId.value = null
+  try {
+    const records = await fetchAnswerRanks(rankType.value, 10)
+    rankUsers.value = records.map(toRankUser)
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : '排行榜加载失败'
+  } finally {
+    loading.value = false
+  }
+}
+
+function changeRankType(type: RankType) {
+  if (rankType.value === type) return
+  rankType.value = type
+  loadRanks()
+}
 
 // 名人堂按 2-1-3 排布,冠军居中且抬高
 const podium = computed(() => {
-  const top3 = rankUsers.slice(0, 3)
-  return [top3[1], top3[0], top3[2]]
+  const top3 = rankUsers.value.slice(0, 3)
+  return [top3[1], top3[0], top3[2]].filter(Boolean) as RankUser[]
 })
 
-const restRows = computed(() => rankUsers.slice(3))
-
-const expandedUserId = ref<number | null>(null)
+const restRows = computed(() => rankUsers.value.slice(3))
 
 function toggleExpand(userId: number) {
   expandedUserId.value = expandedUserId.value === userId ? null : userId
 }
 
-const expandedUser = computed(() => rankUsers.find((u) => u.userId === expandedUserId.value) ?? null)
+const expandedUser = computed(() => rankUsers.value.find((u) => u.userId === expandedUserId.value) ?? null)
+
+onMounted(loadRanks)
 </script>
 
 <template>
   <div class="leaderboard">
+    <div class="rank-toolbar">
+      <div class="rank-tabs" role="tablist" aria-label="排行榜类型">
+        <button class="rank-tab" :class="{ 'rank-tab--active': rankType === 'total' }" type="button" @click="changeRankType('total')">
+          总榜
+        </button>
+        <button class="rank-tab" :class="{ 'rank-tab--active': rankType === 'daily' }" type="button" @click="changeRankType('daily')">
+          今日榜
+        </button>
+      </div>
+      <el-button :icon="Refresh" :loading="loading" circle aria-label="刷新排行榜" @click="loadRanks" />
+    </div>
+
     <!-- 前三名名人堂 -->
-    <section class="hall">
+    <section v-if="rankUsers.length > 0" class="hall" v-loading="loading">
       <PodiumCard
         v-for="(user, i) in podium"
         :key="user.userId"
@@ -39,11 +100,8 @@ const expandedUser = computed(() => rankUsers.find((u) => u.userId === expandedU
     <!-- 名人堂选中用户的雷达展开区 -->
     <el-collapse-transition>
       <section v-if="expandedUser && expandedUser.rank <= 3" class="expand-panel zm-glass">
-        <div class="expand-radar">
-          <RadarChart :skills="expandedUser.skills" :key="expandedUser.userId" />
-        </div>
         <div class="expand-info">
-          <p class="expand-eyebrow zm-prompt">&gt; skill_matrix · {{ expandedUser.nickname }}</p>
+          <p class="expand-eyebrow zm-prompt">&gt; rank_profile · {{ expandedUser.nickname }}</p>
           <div class="badge-wall">
             <span v-for="badge in expandedUser.badges" :key="badge" class="badge">
               <el-icon :size="13"><Medal /></el-icon>
@@ -55,13 +113,11 @@ const expandedUser = computed(() => rankUsers.find((u) => u.userId === expandedU
     </el-collapse-transition>
 
     <!-- 4 名以后的滚动排行 -->
-    <section class="rank-table zm-glass">
+    <section class="rank-table zm-glass" v-loading="loading">
       <div class="table-head">
         <span class="col col--rank">名次</span>
         <span class="col col--user">用户</span>
-        <span class="col col--num">战力值</span>
-        <span class="col col--num">已通关</span>
-        <span class="col col--num">胜率</span>
+        <span class="col col--num">答对数</span>
       </div>
 
       <div v-for="user in restRows" :key="user.userId">
@@ -76,14 +132,11 @@ const expandedUser = computed(() => rankUsers.find((u) => u.userId === expandedU
             <UserAvatar :nickname="user.nickname" :hue="user.avatarHue" :size="36" />
             <span class="row-name">{{ user.nickname }}</span>
           </span>
-          <span class="col col--num row-power">{{ user.power.toLocaleString() }}</span>
-          <span class="col col--num">{{ user.solved }}</span>
-          <span class="col col--num">{{ user.winRate }}%</span>
+          <span class="col col--num row-power">{{ user.count.toLocaleString() }}</span>
         </button>
 
         <el-collapse-transition>
           <div v-if="expandedUserId === user.userId" class="row-expand">
-            <RadarChart :skills="user.skills" :size="200" />
             <div class="badge-wall">
               <span v-for="badge in user.badges" :key="badge" class="badge">
                 <el-icon :size="13"><Medal /></el-icon>
@@ -93,6 +146,13 @@ const expandedUser = computed(() => rankUsers.find((u) => u.userId === expandedU
           </div>
         </el-collapse-transition>
       </div>
+
+      <el-empty v-if="!loading && !errorMessage && rankUsers.length === 0" description="暂无排行数据，答对题目后会出现在这里" />
+      <el-result v-if="!loading && errorMessage" icon="warning" :title="errorMessage">
+        <template #extra>
+          <el-button type="primary" @click="loadRanks">重新加载</el-button>
+        </template>
+      </el-result>
     </section>
   </div>
 </template>
@@ -103,6 +163,38 @@ const expandedUser = computed(() => rankUsers.find((u) => u.userId === expandedU
   flex-direction: column;
   gap: 22px;
   max-width: 920px;
+}
+
+.rank-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rank-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--zm-radius-sm);
+  background: var(--zm-surface-strong);
+  border: 1px solid var(--zm-border);
+}
+
+.rank-tab {
+  border: none;
+  border-radius: var(--zm-radius-sm);
+  padding: 7px 14px;
+  background: transparent;
+  color: var(--zm-ink-soft);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rank-tab--active {
+  background: var(--zm-bg-elevated);
+  color: var(--zm-accent);
+  box-shadow: var(--zm-shadow-sm);
 }
 
 .hall {

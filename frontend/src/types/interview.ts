@@ -59,6 +59,14 @@ export interface InterviewReportVO {
   createTime: string
 }
 
+export type ReportStatus = 0 | 1 | 2
+
+export interface InterviewReportStatusVO {
+  status: ReportStatus
+  report?: InterviewReportVO
+  message?: string
+}
+
 // GET /interviews 列表项
 export interface InterviewSessionListVO {
   id: number

@@ -5,10 +5,7 @@ import com.zhimian.common.Result;
 import com.zhimian.model.dto.ChatMessageDTO;
 import com.zhimian.model.dto.CreateInterviewDTO;
 import com.zhimian.model.dto.InterviewSessionQueryDTO;
-import com.zhimian.model.vo.InterviewReportVO;
-import com.zhimian.model.vo.InterviewSessionDetailVO;
-import com.zhimian.model.vo.InterviewSessionListVO;
-import com.zhimian.model.vo.InterviewSessionVO;
+import com.zhimian.model.vo.*;
 import com.zhimian.service.InterviewService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -42,8 +39,13 @@ public class InterviewController {
     }
 
     @PostMapping("/{id}/finish")
-    public Result<InterviewReportVO> finish(@PathVariable Long id){
+    public Result<InterviewReportStatusVO> finish(@PathVariable Long id){
         return Result.success(interviewService.finishInterview(id));
+    }
+
+    @GetMapping("/{id}/report")
+    public Result<InterviewReportStatusVO> reportStatus(@PathVariable Long id){
+        return Result.success(interviewService.getReportStatus(id));
     }
 
 
