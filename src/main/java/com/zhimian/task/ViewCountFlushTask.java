@@ -7,11 +7,13 @@ import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -24,6 +26,11 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class ViewCountFlushTask {
     private static final String VIEW_COUNT_PREFIX = "zhimian:question:view:";
+    private static final RedisScript<String> GET_AND_DELETE_SCRIPT = RedisScript.of(
+            "local value = redis.call('get', KEYS[1]); "
+                    + "if value then redis.call('del', KEYS[1]); end; return value",
+            String.class
+    );
     private final StringRedisTemplate redisTemplate;
     private final QuestionMapper questionMapper;
 
@@ -35,17 +42,21 @@ public class ViewCountFlushTask {
         }
         int flushed = 0;
         for(String key : keys){
-            // getAndDelete 是原子操作:一步到位"取值 + 删除",中间不会有新的 INCR 插进来丢计数
-            String countStr = redisTemplate.opsForValue().getAndDelete(key);
+            // Lua 在 Redis 5 也能原子完成取值和删除，避免依赖 Redis 6.2 才提供的 GETDEL。
+            String countStr = redisTemplate.execute(GET_AND_DELETE_SCRIPT, List.of(key));
             if(countStr == null){
                 continue;
             }
-            Long questionId = Long.valueOf(key.substring(VIEW_COUNT_PREFIX.length()));
             int delta = Integer.parseInt(countStr);
-            // 原地累加(view_count = view_count + delta),不是覆盖赋值——delta 只是这一批时间窗口内的
-            // 新增量,不是题目的总浏览量,写成覆盖式会把数据库里已有的历史浏览量全部冲掉
-            questionMapper.incrementView(questionId,delta);
-            flushed++;
+            try {
+                Long questionId = Long.valueOf(key.substring(VIEW_COUNT_PREFIX.length()));
+                questionMapper.incrementView(questionId,delta);
+                flushed++;
+            } catch (RuntimeException e) {
+                // 数据库失败时把已取出的增量补回原 key；期间新产生的 INCR 会和它继续累加。
+                redisTemplate.opsForValue().increment(key, delta);
+                log.error("浏览量回写失败，增量已放回Redis:key={},delta={}", key, delta, e);
+            }
         }
         log.info("浏览量批量回写完成，共处理{}个题目",flushed);
     }
@@ -57,7 +68,8 @@ public class ViewCountFlushTask {
         Set<String> keys = new HashSet<>();
         redisTemplate.execute((RedisCallback<Void>) connection ->{
             try(Cursor<byte[]> cursor =
-                    connection.scan(ScanOptions.scanOptions().match(pattern).count(100).build())){
+                    connection.keyCommands().scan(
+                            ScanOptions.scanOptions().match(pattern).count(100).build())){
                 while (cursor.hasNext()){
                     keys.add(new String(cursor.next(), StandardCharsets.UTF_8));
                 }

@@ -121,6 +121,9 @@ CREATE TABLE `interview_session` (
   `direction`   VARCHAR(32)  NOT NULL COMMENT '面试方向:java_concurrency/jvm/mysql/redis/system_design',
   `title`       VARCHAR(128) DEFAULT NULL COMMENT '会话标题(默认取方向+日期)',
   `status`      TINYINT      NOT NULL DEFAULT 0 COMMENT '0-进行中 1-已结束 2-报告已生成',
+  `target_question_count` INT NOT NULL DEFAULT 8 COMMENT '本场面试目标题数',
+  `answered_question_count` INT NOT NULL DEFAULT 0 COMMENT '已经提交回答的题数',
+  `finish_reason` VARCHAR(32) DEFAULT NULL COMMENT 'AUTO_LIMIT/USER_STOP/SYSTEM_ERROR',
   `end_time`    DATETIME     DEFAULT NULL COMMENT '结束时间',
   `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -140,6 +143,52 @@ CREATE TABLE `interview_message` (
   PRIMARY KEY (`id`),
   KEY `idx_session_id` (`session_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '面试消息表';
+
+-- AI 面试题目轮次。一行对应一道题，用于单题评分、统计和过滤未回答题目。
+CREATE TABLE `interview_turn` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `session_id` BIGINT NOT NULL,
+  `user_id` BIGINT NOT NULL,
+  `round_no` INT NOT NULL,
+  `question_text` VARCHAR(512) NOT NULL,
+  `answer_text` TEXT DEFAULT NULL,
+  `score` INT DEFAULT NULL COMMENT '0-100，评分失败或未回答时为空',
+  `result` TINYINT DEFAULT NULL COMMENT '0-答错 1-答对，60分及以上为答对',
+  `evaluation` VARCHAR(1000) DEFAULT NULL,
+  `status` TINYINT NOT NULL DEFAULT 0 COMMENT '0-待回答 2-已评分 3-评分失败 4-用户跳过',
+  `answered_time` DATETIME DEFAULT NULL COMMENT '用户回答完成并写入评分结果的时间',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_session_round` (`session_id`, `round_no`),
+  KEY `idx_user_status_time` (`user_id`, `status`, `answered_time`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT 'AI 面试单题轮次';
+
+-- AI 面试自动沉淀的候选题
+CREATE TABLE `ai_question_candidate` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `title` VARCHAR(256) NOT NULL COMMENT '从 AI 回复中提取的问题',
+  `normalized_title` VARCHAR(256) NOT NULL COMMENT '标准化后的问题',
+  `fingerprint` CHAR(64) NOT NULL COMMENT '标准化文本的 SHA-256',
+  `answer` TEXT DEFAULT NULL COMMENT 'AI 生成的参考答案',
+  `difficulty` TINYINT DEFAULT NULL COMMENT '1-简单 2-中等 3-困难',
+  `category_id` BIGINT DEFAULT NULL COMMENT 'AI 建议的分类 id',
+  `tag_ids` JSON DEFAULT NULL COMMENT 'AI 建议的标签 id 数组',
+  `direction` VARCHAR(32) NOT NULL COMMENT '来源面试方向',
+  `source_session_id` BIGINT NOT NULL COMMENT '来源会话 id',
+  `source_message_id` BIGINT NOT NULL COMMENT '来源 assistant 消息 id',
+  `duplicate_count` INT NOT NULL DEFAULT 1 COMMENT '被重复问到的次数',
+  `status` TINYINT NOT NULL DEFAULT 0 COMMENT '0-补全中 1-待审核 2-已收录 3-已忽略 4-补全失败 5-收录中',
+  `error_message` VARCHAR(255) DEFAULT NULL,
+  `question_id` BIGINT DEFAULT NULL COMMENT '审核后生成的正式题目 id',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_fingerprint` (`fingerprint`),
+  UNIQUE KEY `uk_source_message` (`source_message_id`),
+  KEY `idx_status_time` (`status`, `create_time`),
+  KEY `idx_direction` (`direction`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT 'AI 面试候选题';
 
 -- 面试评价报告表(一场会话一份,uk_session_id 兼作幂等兜底)
 CREATE TABLE `interview_report` (

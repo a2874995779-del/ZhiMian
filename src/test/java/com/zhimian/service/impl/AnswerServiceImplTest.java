@@ -8,6 +8,7 @@ import com.zhimian.mapper.QuestionMapper;
 import com.zhimian.mapper.UserMapper;
 import com.zhimian.model.dto.AnswerDailyStatDTO;
 import com.zhimian.model.dto.AnswerSubmitDTO;
+import com.zhimian.model.dto.RankStatDTO;
 import com.zhimian.model.entity.AnswerRecord;
 import com.zhimian.model.entity.Question;
 import com.zhimian.model.entity.User;
@@ -20,22 +21,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ZSetOperations;
 import com.zhimian.service.WrongQuestionService;
 
 import java.time.LocalDate;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -50,10 +44,6 @@ class AnswerServiceImplTest {
     @Mock
     private UserMapper userMapper;
     @Mock
-    private StringRedisTemplate redisTemplate;
-    @Mock
-    private ZSetOperations<String, String> zSetOperations;
-    @Mock
     private WrongQuestionService wrongQuestionService;
 
     private AnswerServiceImpl answerService;
@@ -64,7 +54,6 @@ class AnswerServiceImplTest {
                 answerRecordMapper,
                 questionMapper,
                 userMapper,
-                redisTemplate,
                 wrongQuestionService
         );
         UserContext.set(42L, "user", "jti", System.currentTimeMillis() + 3_600_000);
@@ -76,12 +65,10 @@ class AnswerServiceImplTest {
     }
 
     @Test
-    void submitCorrectAnswerPersistsRecordAndUpdatesRankKeys() {
+    void submitCorrectAnswerPersistsRecord() {
         Question question = new Question();
         question.setId(100L);
         when(questionMapper.selectById(100L)).thenReturn(question);
-        when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        when(redisTemplate.getExpire(anyString())).thenReturn(-1L);
 
         AnswerSubmitDTO dto = new AnswerSubmitDTO();
         dto.setResult(1);
@@ -95,9 +82,6 @@ class AnswerServiceImplTest {
         assertThat(record.getQuestionId()).isEqualTo(100L);
         assertThat(record.getResult()).isEqualTo(1);
 
-        verify(zSetOperations).incrementScore("zhimian:rank:answer:total", "42", 1);
-        verify(zSetOperations).incrementScore(eq("zhimian:rank:answer:" + LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))), eq("42"), eq(1.0));
-        verify(redisTemplate).expire(anyString(), eq(7L), eq(TimeUnit.DAYS));
         verify(wrongQuestionService).recordAnswer(100L, 1);
     }
 
@@ -113,7 +97,6 @@ class AnswerServiceImplTest {
         answerService.submitAnswer(100L, dto);
 
         verify(answerRecordMapper).insert(any(AnswerRecord.class));
-        verify(redisTemplate, never()).opsForZSet();
         verify(wrongQuestionService).recordAnswer(100L, 0);
     }
 
@@ -132,12 +115,9 @@ class AnswerServiceImplTest {
     }
 
     @Test
-    void getRankMapsRedisScoresToUserNicknames() {
-        ZSetOperations.TypedTuple<String> first = typedTuple("7", 12.0);
-        ZSetOperations.TypedTuple<String> second = typedTuple("9", 8.0);
-        Set<ZSetOperations.TypedTuple<String>> tuples = new LinkedHashSet<>(List.of(first, second));
-        when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        when(zSetOperations.reverseRangeWithScores("zhimian:rank:answer:total", 0, 1)).thenReturn(tuples);
+    void getRankMapsDatabaseStatsToUserNicknames() {
+        when(answerRecordMapper.selectCorrectRank(null, null, 2))
+                .thenReturn(List.of(rankStat(7L, 12), rankStat(9L, 8)));
 
         User user7 = user(7L, "小智");
         User user9 = user(9L, "面霸");
@@ -157,7 +137,25 @@ class AnswerServiceImplTest {
     @Test
     void getRankReturnsEmptyWhenLimitIsInvalid() {
         assertThat(answerService.getRank("total", 0)).isEmpty();
-        verify(redisTemplate, never()).opsForZSet();
+        verify(answerRecordMapper, never()).selectCorrectRank(any(), any(), any(Integer.class));
+    }
+
+    @Test
+    void getRankRejectsUnknownType() {
+        assertThatThrownBy(() -> answerService.getRank("weekly", 10))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo(ErrorCode.PARAMS_ERROR.getCode());
+        verify(answerRecordMapper, never()).selectCorrectRank(any(), any(), any(Integer.class));
+    }
+
+    @Test
+    void getRankCapsPublicLimit() {
+        when(answerRecordMapper.selectCorrectRank(null, null, 100)).thenReturn(List.of());
+
+        assertThat(answerService.getRank("total", 10_000)).isEmpty();
+
+        verify(answerRecordMapper).selectCorrectRank(null, null, 100);
     }
 
     @Test
@@ -199,11 +197,10 @@ class AnswerServiceImplTest {
         return stat;
     }
 
-    @SuppressWarnings("unchecked")
-    private ZSetOperations.TypedTuple<String> typedTuple(String value, Double score) {
-        ZSetOperations.TypedTuple<String> tuple = org.mockito.Mockito.mock(ZSetOperations.TypedTuple.class);
-        doReturn(value).when(tuple).getValue();
-        doReturn(score).when(tuple).getScore();
-        return tuple;
+    private RankStatDTO rankStat(Long userId, int count) {
+        RankStatDTO stat = new RankStatDTO();
+        stat.setUserId(userId);
+        stat.setCount(count);
+        return stat;
     }
 }

@@ -13,4 +13,13 @@
         WHERE session_id = #{sessionId}
         ORDER BY id ASC
     </select>
+
+    <select id="selectLastAssistantBySessionId" resultType="com.zhimian.model.entity.InterviewMessage">
+        SELECT id, session_id, role, content, tokens, create_time
+        FROM interview_message
+        WHERE session_id = #{sessionId}
+          AND role = 'assistant'
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
 </mapper>

@@ -5,6 +5,7 @@ import {
   Clock,
   Grid,
   Microphone,
+  Management,
   Moon,
   Notebook,
   Reading,
@@ -30,16 +31,19 @@ const navIcons: Record<string, any> = {
   history: Clock,
   wrong: Notebook,
   favorites: Star,
+  review: Management,
   user: User,
 }
 
 const navItems = computed(() =>
-  router.options.routes.map((r) => ({
-    path: r.path,
-    name: r.name as string,
-    label: (r.meta?.label as string) ?? '',
-    icon: navIcons[(r.meta?.icon as string) ?? 'grid'],
-  })),
+  router.options.routes
+    .filter((r) => !r.meta?.requiresAdmin || auth.user?.role === 'admin')
+    .map((r) => ({
+      path: r.path,
+      name: r.name as string,
+      label: (r.meta?.label as string) ?? '',
+      icon: navIcons[(r.meta?.icon as string) ?? 'grid'],
+    })),
 )
 
 const isDark = ref(false)

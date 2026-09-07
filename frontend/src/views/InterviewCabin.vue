@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleCheck, Promotion } from '@element-plus/icons-vue'
 import ExaminerAvatar from '../components/interview/ExaminerAvatar.vue'
 import ReportCard from '../components/interview/ReportCard.vue'
@@ -25,6 +25,9 @@ const activeDirection = ref<DirectionOption | null>(null)
 const sessionId = ref<number | null>(null)
 const transcript = ref<ChatTurn[]>([])
 const answer = ref('')
+const selectedQuestionCount = ref(8)
+const targetQuestionCount = ref(8)
+const answeredQuestionCount = ref(0)
 const waitingReply = ref(false)
 const report = ref<InterviewReportVO | null>(null)
 const reportMessage = ref('')
@@ -58,6 +61,8 @@ async function restoreSession(id: number) {
     const detail = await getInterviewDetail(id)
     activeDirection.value = directionOptionOf(detail.direction)
     sessionId.value = detail.id
+    targetQuestionCount.value = detail.targetQuestionCount
+    answeredQuestionCount.value = detail.answeredQuestionCount
     transcript.value = detail.messages.map((message) => ({
       role: message.role,
       content: message.content,
@@ -109,9 +114,11 @@ async function pickDirection(option: DirectionOption) {
   }
   creating.value = true
   try {
-    const session = await createInterview(option.code)
+    const session = await createInterview(option.code, selectedQuestionCount.value)
     activeDirection.value = option
     sessionId.value = session.id
+    targetQuestionCount.value = session.targetQuestionCount
+    answeredQuestionCount.value = session.answeredQuestionCount
     transcript.value = [{ role: 'assistant', content: session.openingMessage }]
     localStorage.setItem('zm-active-interview-id', String(session.id))
     router.replace({ path: '/interview', query: { sessionId: session.id } })
@@ -148,9 +155,16 @@ async function submitAnswer() {
       assistantTurn.content += delta
       scrollToBottom()
     },
-    onDone: () => {
+    onDone: (event) => {
       if (sessionId.value !== requestSessionId) return
+      answeredQuestionCount.value = event.answeredCount
       waitingReply.value = false
+      if (event.finished) {
+        targetQuestionCount.value = event.targetCount
+        phase.value = 'generating-report'
+        reportMessage.value = '已完成全部题目，正在生成评价报告'
+        startReportPolling(requestSessionId)
+      }
     },
     onError: (message) => {
       if (sessionId.value !== requestSessionId) return
@@ -181,6 +195,17 @@ async function endInterview() {
   // 结束面试 = 让后端生成评价报告(顺带把会话状态从"进行中"推走,不再占用并发名额)。
   // 后端对"报告已生成"的会话是幂等的,万一这次生成失败(50001),会话停在"已结束未评价",
   // 用户可以再点一次重试,所以这里失败就停在当前对话页,http.ts 已经弹过错误提示了。
+  if (phase.value === 'chatting') {
+    try {
+      await ElMessageBox.confirm(
+        `当前待回答题目不会计分，本场已完成 ${answeredQuestionCount.value} 题，确定结束吗？`,
+        '结束面试',
+        { confirmButtonText: '结束并生成评价', cancelButtonText: '继续回答', type: 'warning' },
+      )
+    } catch {
+      return
+    }
+  }
   finishing.value = true
   try {
     const status = await finishInterview(sessionId.value)
@@ -250,6 +275,8 @@ function startNew() {
   report.value = null
   reportMessage.value = ''
   lastReportStatus.value = null
+  targetQuestionCount.value = selectedQuestionCount.value
+  answeredQuestionCount.value = 0
   localStorage.removeItem('zm-active-interview-id')
   router.replace({ path: '/interview' })
 }
@@ -270,6 +297,11 @@ const examinerStatus = computed(() => (waitingReply.value ? '> 考官正在思�
     <!-- 选方向 -->
     <template v-else-if="phase === 'picking'">
       <p class="zm-prompt section-eyebrow">&gt; pick_a_direction</p>
+      <div class="length-picker">
+        <span>面试长度</span>
+        <el-segmented v-model="selectedQuestionCount" :options="[5, 8, 12]" />
+        <span class="length-unit">题</span>
+      </div>
       <div class="direction-grid" v-loading="creating">
         <button
           v-for="option in DIRECTION_OPTIONS"
@@ -322,7 +354,9 @@ const examinerStatus = computed(() => (waitingReply.value ? '> 考官正在思�
           <p class="examiner-status zm-prompt">{{ examinerStatus }}</p>
           <div class="session-meta">
             <span class="zm-tag zm-tag--active">{{ activeDirection?.label }}</span>
-            <span class="zm-tag">第 {{ Math.ceil(transcript.length / 2) }} 轮</span>
+            <span class="zm-tag">
+              第 {{ Math.min(answeredQuestionCount + 1, targetQuestionCount) }}/{{ targetQuestionCount }} 题
+            </span>
           </div>
           <el-button
             class="finish-btn"
@@ -418,6 +452,19 @@ const examinerStatus = computed(() => (waitingReply.value ? '> 考官正在思�
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 16px;
   min-height: 120px;
+}
+
+.length-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  font-size: 13px;
+  color: var(--zm-ink-soft);
+}
+
+.length-unit {
+  color: var(--zm-ink-faint);
 }
 
 .direction-card {

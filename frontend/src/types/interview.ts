@@ -19,6 +19,8 @@ export interface InterviewSessionVO {
   id: number
   direction: InterviewDirectionCode
   openingMessage: string
+  targetQuestionCount: number
+  answeredQuestionCount: number
 }
 
 // 后端 chat 接口现在是 SSE 流,不再是一次性的 JSON 回复,事件类型对应 InterviewServiceImpl.sendEvent 发的三种 payload
@@ -27,6 +29,16 @@ export interface ChatStreamEvent {
   content?: string
   messageId?: number
   message?: string
+  finished?: boolean
+  answeredCount?: number
+  targetCount?: number
+}
+
+export interface ChatDoneEvent {
+  messageId: number
+  finished: boolean
+  answeredCount: number
+  targetCount: number
 }
 
 // 前端本地维护的对话轮次,role 对应后端 InterviewMessage 的 role
@@ -73,6 +85,9 @@ export interface InterviewSessionListVO {
   direction: string
   title: string
   status: InterviewStatus
+  targetQuestionCount: number
+  answeredQuestionCount: number
+  finishReason: 'AUTO_LIMIT' | 'USER_STOP' | 'SYSTEM_ERROR' | null
   createTime: string
   endTime: string | null
 }
@@ -90,6 +105,9 @@ export interface InterviewSessionDetailVO {
   direction: string
   title: string
   status: InterviewStatus
+  targetQuestionCount: number
+  answeredQuestionCount: number
+  finishReason: 'AUTO_LIMIT' | 'USER_STOP' | 'SYSTEM_ERROR' | null
   createTime: string
   endTime: string | null
   messages: InterviewMessageVO[]

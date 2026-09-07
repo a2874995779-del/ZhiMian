@@ -48,6 +48,17 @@ const router = createRouter({
       meta: { label: '收藏夹', icon: 'favorites', requiresAuth: true },
     },
     {
+      path: '/admin/ai-questions',
+      name: 'ai-question-review',
+      component: () => import('../views/AiQuestionCandidates.vue'),
+      meta: {
+        label: 'AI 题目审核',
+        icon: 'review',
+        requiresAuth: true,
+        requiresAdmin: true,
+      },
+    },
+    {
       path: '/profile',
       name: 'profile',
       component: () => import('../views/ComingSoon.vue'),
@@ -57,7 +68,22 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  if (!to.meta.requiresAuth || localStorage.getItem(TOKEN_KEY)) {
+  const token = localStorage.getItem(TOKEN_KEY)
+  if (to.meta.requiresAdmin) {
+    try {
+      const user = JSON.parse(localStorage.getItem('zm-user') ?? 'null')
+      if (token && user?.role === 'admin') {
+        return true
+      }
+    } catch {
+      localStorage.removeItem('zm-user')
+    }
+    return token ? { path: '/' } : {
+      path: '/questions',
+      query: { login: '1', redirect: to.fullPath },
+    }
+  }
+  if (!to.meta.requiresAuth || token) {
     return true
   }
   return {

@@ -19,10 +19,13 @@ import com.zhimian.model.vo.QuestionDetailVO;
 import com.zhimian.model.vo.QuestionListVO;
 import com.zhimian.service.QuestionService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.CollectionUtils;
 
 import java.util.ArrayList;
@@ -33,6 +36,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class QuestionServiceImpl implements QuestionService {
     private final QuestionMapper questionMapper;
@@ -91,6 +95,7 @@ public class QuestionServiceImpl implements QuestionService {
         if(!CollectionUtils.isEmpty(dto.getTagIds())){
             questionTagMapper.batchInsert(id,dto.getTagIds());
         }
+        evictQuestionCachesAfterCommit(id);
     }
 
     @Transactional
@@ -102,6 +107,7 @@ public class QuestionServiceImpl implements QuestionService {
         // 关联记录留不留都不影响正确性(所有查询以 question.is_deleted 为准),
         // 这里选择顺手清掉,让关联表只存有效关系
         questionTagMapper.deleteByQuestionId(id);
+        evictQuestionCachesAfterCommit(id);
     }
 
     @Override
@@ -324,5 +330,28 @@ public class QuestionServiceImpl implements QuestionService {
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private void evictQuestionCachesAfterCommit(Long questionId) {
+        Runnable eviction = () -> {
+            try {
+                redisTemplate.delete(List.of(
+                        DETAIL_CACHE_PREFIX + questionId,
+                        HOT_CACHE_KEY
+                ));
+            } catch (RuntimeException e) {
+                log.warn("清理题目缓存失败:questionId={}", questionId, e);
+            }
+        };
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            eviction.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                eviction.run();
+            }
+        });
     }
 }

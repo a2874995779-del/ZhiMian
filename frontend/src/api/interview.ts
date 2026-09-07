@@ -2,6 +2,7 @@ import { get, post } from './http'
 import type { PageResult } from './question'
 import type {
   ChatStreamEvent,
+  ChatDoneEvent,
   InterviewDirectionCode,
   InterviewReportStatusVO,
   InterviewSessionDetailVO,
@@ -14,8 +15,8 @@ import type {
 // (再点会显示"会话正在处理中",刷新后又发现报告已生成)。给它们一个足够长的超时,等真正的结果。
 const AI_CALL_TIMEOUT = 120000
 
-export function createInterview(direction: InterviewDirectionCode): Promise<InterviewSessionVO> {
-  return post<InterviewSessionVO>('/interviews', { direction })
+export function createInterview(direction: InterviewDirectionCode, targetQuestionCount = 8): Promise<InterviewSessionVO> {
+  return post<InterviewSessionVO>('/interviews', { direction, targetQuestionCount })
 }
 
 // 结束面试:后端会加载整场对话让模型生成一份结构化评价报告并返回。
@@ -38,7 +39,7 @@ export function getInterviewDetail(id: number): Promise<InterviewSessionDetailVO
 
 export interface ChatStreamHandlers {
   onDelta: (content: string) => void
-  onDone: (messageId: number) => void
+  onDone: (event: ChatDoneEvent) => void
   onError: (message: string) => void
 }
 
@@ -50,6 +51,7 @@ export async function chatInterviewStream(
   content: string,
   handlers: ChatStreamHandlers,
 ): Promise<void> {
+  let terminalReceived = false
   try {
     const token = localStorage.getItem('zm-token')
     const resp = await fetch(`/api/interviews/${sessionId}/chat`, {
@@ -72,10 +74,12 @@ export async function chatInterviewStream(
         import('../stores/auth').then(({ useAuthStore }) => useAuthStore().logout())
       }
       handlers.onError(body?.message || '请求失败')
+      terminalReceived = true
       return
     }
     if (!resp.body) {
       handlers.onError('当前浏览器不支持读取流式响应')
+      terminalReceived = true
       return
     }
 
@@ -83,31 +87,50 @@ export async function chatInterviewStream(
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
 
+    const dispatchFrame = (rawFrame: string) => {
+      const dataLine = rawFrame.split(/\r?\n/).find((line) => line.startsWith('data:'))
+      if (!dataLine) return
+      const payload: ChatStreamEvent = JSON.parse(dataLine.slice(5).trim())
+      if (payload.type === 'delta') {
+        handlers.onDelta(payload.content ?? '')
+      } else if (payload.type === 'done') {
+        terminalReceived = true
+        handlers.onDone({
+          messageId: payload.messageId ?? 0,
+          finished: payload.finished ?? false,
+          answeredCount: payload.answeredCount ?? 0,
+          targetCount: payload.targetCount ?? 8,
+        })
+      } else if (payload.type === 'error') {
+        terminalReceived = true
+        handlers.onError(payload.message ?? 'AI 服务异常，请稍后重试')
+      }
+    }
+
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
 
-      // SSE 帧以空行分隔,一次 read 可能带回不止一帧,也可能一帧被拆成两次 read——按 \n\n 切,切不出来的留在 buffer 里等下一次
-      let separatorIndex
-      while ((separatorIndex = buffer.indexOf('\n\n')) !== -1) {
-        const rawFrame = buffer.slice(0, separatorIndex)
-        buffer = buffer.slice(separatorIndex + 2)
-        const dataLine = rawFrame.split('\n').find((line) => line.startsWith('data:'))
-        if (!dataLine) {
-          continue
-        }
-        const payload: ChatStreamEvent = JSON.parse(dataLine.slice(5).trim())
-        if (payload.type === 'delta') {
-          handlers.onDelta(payload.content ?? '')
-        } else if (payload.type === 'done') {
-          handlers.onDone(payload.messageId ?? 0)
-        } else if (payload.type === 'error') {
-          handlers.onError(payload.message ?? 'AI 服务异常，请稍后重试')
-        }
+      // 同时兼容 LF 与 CRLF；未读完整的帧继续留在 buffer 中。
+      let match = /\r?\n\r?\n/.exec(buffer)
+      while (match?.index !== undefined) {
+        const rawFrame = buffer.slice(0, match.index)
+        buffer = buffer.slice(match.index + match[0].length)
+        dispatchFrame(rawFrame)
+        match = /\r?\n\r?\n/.exec(buffer)
       }
     }
+    buffer += decoder.decode()
+    if (buffer.trim()) dispatchFrame(buffer)
+    if (!terminalReceived) {
+      terminalReceived = true
+      handlers.onError('连接已中断，请重新提交本轮回答')
+    }
   } catch {
-    handlers.onError('网络异常，请确认后端服务已启动')
+    if (!terminalReceived) {
+      terminalReceived = true
+      handlers.onError('网络异常，请确认后端服务已启动')
+    }
   }
 }

@@ -84,14 +84,20 @@ public class InterviewContextManager {
                 .filter(m->!"system".equals(m.getRole()))
                 .toList();
         int used = systemMsg !=null ? estimateTokens(systemMsg.getContent()) : 0 ;
-        LinkedList<InterviewMessage> kept = new LinkedList<>();
-        for(int i =others.size()-1;i>=0;i--){
-            InterviewMessage m = others.get(i);
-            int tokens =estimateTokens(m.getContent());
-            if(used + tokens > TOKEN_BUDGET){
-                continue;
+        List<List<InterviewMessage>> units = groupConversationUnits(others);
+        LinkedList<List<InterviewMessage>> keptUnits = new LinkedList<>();
+        for (int i = units.size() - 1; i >= 0; i--) {
+            List<InterviewMessage> unit = units.get(i);
+            int tokens = unit.stream().mapToInt(m -> estimateTokens(m.getContent())).sum();
+            if (used + tokens > TOKEN_BUDGET) {
+                // 最新一组至少要保留，尤其是最后一条待回答问题；更早的内容则整体停止，避免拆散问答。
+                if (keptUnits.isEmpty()) {
+                    keptUnits.addFirst(unit);
+                    used += tokens;
+                }
+                break;
             }
-            kept.addFirst(m);
+            keptUnits.addFirst(unit);
             used += tokens;
         }
 
@@ -99,9 +105,30 @@ public class InterviewContextManager {
         if(systemMsg !=null){
             result.add(systemMsg);
         }
-        result.addAll(kept);
+        for (List<InterviewMessage> unit : keptUnits) {
+            result.addAll(unit);
+        }
         log.info("会话上下文裁剪完成：原始{}条，保留{}条，预估token{}",messages.size(),result.size(),used);
         return result;
+    }
+
+    private List<List<InterviewMessage>> groupConversationUnits(List<InterviewMessage> messages) {
+        List<List<InterviewMessage>> units = new ArrayList<>();
+        for (int i = 0; i < messages.size(); i++) {
+            InterviewMessage current = messages.get(i);
+            if ("assistant".equals(current.getRole())
+                    && i + 1 < messages.size()
+                    && "user".equals(messages.get(i + 1).getRole())) {
+                units.add(List.of(current, messages.get(++i)));
+            } else {
+                units.add(List.of(current));
+            }
+        }
+        return units;
+    }
+
+    public void evict(Long sessionId) {
+        redisTemplate.delete(ctxKey(sessionId));
     }
     private int estimateTokens(String text) {
         return text.length() / 2;

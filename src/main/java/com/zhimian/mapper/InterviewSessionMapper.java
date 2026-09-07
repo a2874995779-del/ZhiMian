@@ -27,5 +27,7 @@ public interface InterviewSessionMapper {
 
     void markReportReady(@Param("id") Long id);
 
-    void endSession(@Param("id") Long id);
+    int endSession(@Param("id") Long id, @Param("finishReason") String finishReason);
+
+    int incrementAnsweredCount(@Param("id") Long id);
 }

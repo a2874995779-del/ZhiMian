@@ -2,6 +2,7 @@ package com.zhimian.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.util.concurrent.Executor;
@@ -17,6 +18,7 @@ public class AppConfig {
     }
 
     @Bean("reportExecutor")
+    @Primary
     public Executor reportExecutor() {
         return new ThreadPoolExecutor(
                 2,
@@ -30,6 +32,23 @@ public class AppConfig {
                     return thread;
                 },
                 new ThreadPoolExecutor.CallerRunsPolicy()
+        );
+    }
+
+    @Bean("questionCollectExecutor")
+    public Executor questionCollectExecutor() {
+        return new ThreadPoolExecutor(
+                1,
+                2,
+                60,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(100),
+                runnable -> {
+                    Thread thread = new Thread(runnable);
+                    thread.setName("question-collector-" + thread.getId());
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy()
         );
     }
 }

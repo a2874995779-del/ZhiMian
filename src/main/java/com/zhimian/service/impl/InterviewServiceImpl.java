@@ -1,6 +1,7 @@
 package com.zhimian.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhimian.ai.AiQuestionCollectDispatcher;
 import com.zhimian.ai.InterviewContextManager;
 import com.zhimian.common.ErrorCode;
 import com.zhimian.common.PageResult;
@@ -9,6 +10,8 @@ import com.zhimian.exception.BusinessException;
 import com.zhimian.mapper.InterviewMessageMapper;
 import com.zhimian.mapper.InterviewReportMapper;
 import com.zhimian.mapper.InterviewSessionMapper;
+import com.zhimian.mapper.InterviewTurnMapper;
+import com.zhimian.model.dto.InterviewAnswerEvaluation;
 import com.zhimian.model.dto.ChatMessageDTO;
 import com.zhimian.model.dto.CreateInterviewDTO;
 import com.zhimian.model.dto.InterviewReportResult;
@@ -16,10 +19,15 @@ import com.zhimian.model.dto.InterviewSessionQueryDTO;
 import com.zhimian.model.entity.InterviewMessage;
 import com.zhimian.model.entity.InterviewReport;
 import com.zhimian.model.entity.InterviewSession;
+import com.zhimian.model.entity.InterviewTurn;
 import com.zhimian.model.enums.InterviewDirection;
 import com.zhimian.model.vo.*;
 import com.zhimian.ratelimit.RateLimiter;
+import com.zhimian.redis.RedisLockManager;
+import com.zhimian.service.InterviewPersistenceService;
 import com.zhimian.service.InterviewService;
+import com.zhimian.service.InterviewTurnService;
+import com.zhimian.util.AiQuestionExtractor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -31,37 +39,49 @@ import org.springframework.ai.chat.prompt.Prompt;
 import com.fasterxml.jackson.core.type.TypeReference;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.Disposable;
 import java.util.concurrent.Executor;
 import java.io.IOException;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class InterviewServiceImpl implements InterviewService {
     private static final int MAX_ACTIVE_SESSIONS = 3;
-    private static final String LOCK_PREFIX = "zhimian:interview:lock:";
-    private static final long LOCK_TTL_SECONDS = 300;
+    private static final int DEFAULT_TARGET_QUESTION_COUNT = 8;
+    private static final String CREATE_LOCK_PREFIX = "zhimian:interview:create-lock:";
+    private static final String CHAT_LOCK_PREFIX = "zhimian:interview:chat-lock:";
+    private static final String REPORT_LOCK_PREFIX = "zhimian:interview:report-lock:";
+    private static final Duration CREATE_LOCK_TTL = Duration.ofSeconds(30);
+    private static final Duration CHAT_LOCK_TTL = Duration.ofMinutes(15);
+    private static final Duration REPORT_LOCK_TTL = Duration.ofMinutes(20);
     private static final String RATE_PREFIX = "zhimian:interview:rate:";
     private static final long RATE_WINDOW_SECONDS = 10;
     private final RateLimiter rateLimiter;
     private final InterviewMessageMapper  interviewMessageMapper;
     private final InterviewSessionMapper interviewSessionMapper;
     private final ChatClient chatClient;
-    private final StringRedisTemplate  stringRedisTemplate;
     private final InterviewContextManager contextManager;
     private final InterviewReportMapper interviewReportMapper;
+    private final InterviewTurnMapper interviewTurnMapper;
+    private final InterviewTurnService interviewTurnService;
     private final ObjectMapper objectMapper;
+    private final AiQuestionExtractor aiQuestionExtractor;
+    private final AiQuestionCollectDispatcher questionCollectDispatcher;
+    private final RedisLockManager redisLockManager;
+    private final InterviewPersistenceService persistenceService;
     @Qualifier("reportExecutor")
     private final Executor reportExecutor;
 
@@ -72,40 +92,56 @@ public class InterviewServiceImpl implements InterviewService {
             throw new BusinessException(ErrorCode.PARAMS_ERROR,"暂不支持该面试方向");
         }
         Long userId = UserContext.getUserId();
-        long activeCount = interviewSessionMapper.countInProgress(userId);
-        if(activeCount >=MAX_ACTIVE_SESSIONS){
-            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"面试中的会话达到上限，若想继续，请关闭先前对话");
+        String createLockKey = CREATE_LOCK_PREFIX + userId;
+        String createLockToken = redisLockManager.tryLock(createLockKey, CREATE_LOCK_TTL);
+        if (createLockToken == null) {
+            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "正在创建面试，请勿重复提交");
         }
+        try {
+            long activeCount = interviewSessionMapper.countInProgress(userId);
+            if(activeCount >=MAX_ACTIVE_SESSIONS){
+                throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"面试中的会话达到上限，若想继续，请关闭先前对话");
+            }
 
-        InterviewSession session = new InterviewSession();
-        session.setUserId(userId);
-        session.setDirection(direction.getCode());
-        session.setTitle(direction.getLabel() + " . "+ LocalDate.now());
-        session.setStatus(0);
-        interviewSessionMapper.insert(session);
-        // 到这里,插库已经完成。下面调用 AI 是一次不可控耗时的外部请求,
-        // 整个方法没有加 @Transactional,就是不想让数据库连接陪着这次外部调用一起等
+            InterviewSession session = new InterviewSession();
+            session.setUserId(userId);
+            session.setDirection(direction.getCode());
+            session.setTitle(direction.getLabel() + " . "+ LocalDate.now());
+            session.setStatus(0);
+            session.setTargetQuestionCount(dto.getTargetQuestionCount() == null
+                    ? DEFAULT_TARGET_QUESTION_COUNT : dto.getTargetQuestionCount());
+            session.setAnsweredQuestionCount(0);
 
-        String systemPrompt = buildSystemPrompt(direction);
-        String openingMessage = buildFastOpeningMessage(direction);
-        InterviewMessage systemMsg = buildMessage(session.getId(),"system",systemPrompt);
-        InterviewMessage assistantMsg = buildMessage(session.getId(),"assistant",openingMessage);
-        interviewMessageMapper.insert(systemMsg);
-        interviewMessageMapper.insert(assistantMsg);
-        contextManager.append(session.getId(),systemMsg);
-        contextManager.append(session.getId(),assistantMsg);
+            String systemPrompt = buildSystemPrompt(direction);
+            String openingQuestion = firstQuestion(direction);
+            String openingMessage = buildFastOpeningMessage(direction, openingQuestion);
+            InterviewPersistenceService.CreatedInterview created = persistenceService.create(
+                    session, systemPrompt, openingMessage, openingQuestion
+            );
+            evictContextQuietly(session.getId());
+            questionCollectDispatcher.dispatch(
+                    session.getId(),
+                    created.assistantMessage().getId(),
+                    direction.getCode(),
+                    openingQuestion
+            );
 
-        InterviewSessionVO vo = new InterviewSessionVO();
-        vo.setId(session.getId());
-        vo.setDirection(direction.getCode());
-        vo.setOpeningMessage(openingMessage);
-        return vo;
+            InterviewSessionVO vo = new InterviewSessionVO();
+            vo.setId(session.getId());
+            vo.setDirection(direction.getCode());
+            vo.setOpeningMessage(openingMessage);
+            vo.setTargetQuestionCount(session.getTargetQuestionCount());
+            vo.setAnsweredQuestionCount(0);
+            return vo;
+        } finally {
+            redisLockManager.unlock(createLockKey, createLockToken);
+        }
     }
 
-    private String buildFastOpeningMessage(InterviewDirection direction) {
+    private String buildFastOpeningMessage(InterviewDirection direction, String openingQuestion) {
         return "你好，我是本场 " + direction.getLabel()
-                + " 方向的面试官。我们直接开始，先请你用自己的话回答: "
-                + firstQuestion(direction);
+                + " 方向的面试官。我们直接开始。\n\n【下一题】\n"
+                + openingQuestion;
     }
 
     private String firstQuestion(InterviewDirection direction) {
@@ -134,22 +170,30 @@ public class InterviewServiceImpl implements InterviewService {
         if(!rateLimiter.tryAcquire(RATE_PREFIX+userId,RATE_WINDOW_SECONDS)){
             throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"操作太频繁请稍后再试");
         }
-        String lockKey = LOCK_PREFIX+sessionId;
-        Boolean locked = stringRedisTemplate.opsForValue().setIfAbsent(lockKey,"1",LOCK_TTL_SECONDS,TimeUnit.SECONDS);
-        if(!Boolean.TRUE.equals(locked)){
+        String lockKey = CHAT_LOCK_PREFIX+sessionId;
+        String lockToken = redisLockManager.tryLock(lockKey, CHAT_LOCK_TTL);
+        if(lockToken == null){
             throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"上一轮对话还在处理中，请稍后");
         }
 
         try {
+            InterviewTurn currentTurn = ensureWaitingTurn(session);
+            int targetCount = targetQuestionCount(session);
+            int answeredCount = answeredQuestionCount(session);
+            boolean finalRound = answeredCount + 1 >= targetCount;
             List<InterviewMessage> history = contextManager.load(sessionId);
             List<Message> springAiMessages = toSpringAiMessages(history);
+            if (finalRound) {
+                springAiMessages.add(new SystemMessage(buildFinalRoundInstruction()));
+            }
             springAiMessages.add(new UserMessage(dto.getContent()));
 
             // 有限超时:模型流卡死(既不吐字也不报错)时,到点触发 onTimeout 自救(dispose+放锁),
-            // 而不是干等到锁 300s TTL 过期后被别的请求开出第二条流
+            // 而不是干等到锁 TTL 过期后被别的请求开出第二条流
             SseEmitter emitter = new SseEmitter(TimeUnit.MINUTES.toMillis(5));
             StringBuilder fullReply = new StringBuilder();
             String userContent = dto.getContent();
+            AtomicInteger streamState = new AtomicInteger(0); // 0=流式中 1=完成处理中 2=已取消
 
             Disposable subscription = chatClient.prompt(new Prompt(springAiMessages))
                     .stream()
@@ -157,28 +201,52 @@ public class InterviewServiceImpl implements InterviewService {
                     .doOnNext(fullReply::append)
                     .subscribe(
                             delta -> sendEvent(emitter, Map.of("type", "delta", "content", delta)),
-                            // fullReply.toString() 在 lambda 里求值:失败时拿到的是"到目前吐出的半截",成功时是全文
-                            error -> onStreamError(emitter, sessionId, lockKey, userContent, fullReply.toString(), error),
-                            () -> onStreamComplete(emitter, sessionId, lockKey, userContent, fullReply.toString())
+                            error -> {
+                                if (streamState.compareAndSet(0, 2)) {
+                                    onStreamError(emitter, sessionId, lockKey, lockToken, error);
+                                }
+                            },
+                            () -> {
+                                if (streamState.compareAndSet(0, 1)) {
+                                    onStreamComplete(
+                                            emitter,
+                                            sessionId,
+                                            lockKey,
+                                            lockToken,
+                                            userContent,
+                                            fullReply.toString(),
+                                            session.getDirection(),
+                                            currentTurn,
+                                            finalRound,
+                                            targetCount
+                                    );
+                                }
+                            }
                     );
 
             emitter.onTimeout(() -> {
                 log.warn("SSE超时:sessionId={}",sessionId);
-                subscription.dispose();
-                stringRedisTemplate.delete(lockKey);
+                if (streamState.compareAndSet(0, 2)) {
+                    subscription.dispose();
+                    sendEvent(emitter, Map.of("type", "error", "message", "AI响应超时，请重试"));
+                    emitter.complete();
+                    redisLockManager.unlock(lockKey, lockToken);
+                }
             });
             emitter.onError(throwable -> {
                 log.warn("SSE 连接异常:sessionId={}",sessionId,throwable);
-                subscription.dispose();
-                stringRedisTemplate.delete(lockKey);
+                if (streamState.compareAndSet(0, 2)) {
+                    subscription.dispose();
+                    redisLockManager.unlock(lockKey, lockToken);
+                }
             });
 
             return emitter;
         } catch (RuntimeException e) {
             // 锁已经拿到了,但订阅模型流之前的这几步(取历史、落库、消息角色转换……)只要有一步抛异常,
             // 后面负责释放锁的几条路径(onStreamComplete/onStreamError/onTimeout/onError)都不会被触发,
-            // 这里必须自己把锁放掉,不然要等 300 秒 TTL 到期,这场会话在此期间没法再发消息
-            stringRedisTemplate.delete(lockKey);
+            // 这里必须自己把锁放掉,不然要等 TTL 到期,这场会话在此期间没法再发消息
+            redisLockManager.unlock(lockKey, lockToken);
             throw e;
         }
     }
@@ -230,51 +298,95 @@ public class InterviewServiceImpl implements InterviewService {
             return buildReportStatus(existing);
         }
 
-        String lockKey = LOCK_PREFIX + sessionId;
-        Boolean locked = stringRedisTemplate.opsForValue()
-                .setIfAbsent(lockKey, "1", LOCK_TTL_SECONDS, TimeUnit.SECONDS);
-        if (!Boolean.TRUE.equals(locked)) {
-            return buildGeneratingStatus("报告正在生成中，请稍候");
+        if (answeredQuestionCount(session) == 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "至少回答一道题后才能结束面试");
         }
 
+        String chatLockKey = CHAT_LOCK_PREFIX + sessionId;
+        String chatLockToken = redisLockManager.tryLock(chatLockKey, CHAT_LOCK_TTL);
+        if (chatLockToken == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "当前回答正在处理中，请稍后再结束面试");
+        }
         try {
-            existing = interviewReportMapper.selectBySessionId(sessionId);
+            if (session.getStatus() == 0) {
+                persistenceService.finishByUser(sessionId);
+            }
+        } finally {
+            redisLockManager.unlock(chatLockKey, chatLockToken);
+        }
+        startReportGeneration(sessionId);
+        InterviewReport report = interviewReportMapper.selectBySessionId(sessionId);
+        return report == null
+                ? buildGeneratingStatus("报告正在生成中，请稍候")
+                : buildReportStatus(report);
+    }
+
+    private void startReportGeneration(Long sessionId) {
+        String reportLockKey = REPORT_LOCK_PREFIX + sessionId;
+        String reportLockToken = redisLockManager.tryLock(reportLockKey, REPORT_LOCK_TTL);
+        if (reportLockToken == null) {
+            return;
+        }
+        try {
+            InterviewReport existing = interviewReportMapper.selectBySessionId(sessionId);
             if (existing != null && Integer.valueOf(1).equals(existing.getStatus())) {
                 interviewSessionMapper.markReportReady(sessionId);
-                return buildReportStatus(existing);
-            }
-            if (session.getStatus() == 0) {
-                interviewSessionMapper.endSession(sessionId);
+                redisLockManager.unlock(reportLockKey, reportLockToken);
+                return;
             }
             interviewReportMapper.insertGenerating(sessionId);
-            CompletableFuture.runAsync(() -> generateReportJob(sessionId, lockKey), reportExecutor);
-            return buildGeneratingStatus("报告正在生成中，请稍候");
+            CompletableFuture.runAsync(
+                    () -> generateReportJob(sessionId, reportLockKey, reportLockToken), reportExecutor
+            );
         } catch (RuntimeException e) {
-            stringRedisTemplate.delete(lockKey);
+            redisLockManager.unlock(reportLockKey, reportLockToken);
             throw e;
         }
     }
 
-    private void generateReportJob(Long sessionId, String lockKey) {
+    private void generateReportJob(Long sessionId, String reportLockKey, String reportLockToken) {
         try {
             InterviewReport report = interviewReportMapper.selectBySessionId(sessionId);
             if(report != null && Integer.valueOf(1).equals(report.getStatus())){
                 interviewSessionMapper.markReportReady(sessionId);
                 return;
             }
-            List<InterviewMessage> history = interviewMessageMapper.selectBySessionId(sessionId);
-            InterviewReportResult result = generateReportWithRetry(buildTranscript(history));
-            interviewReportMapper.markSuccess(
+            List<InterviewTurn> turns = interviewTurnMapper.selectAnsweredBySessionId(sessionId);
+            String transcript = turns.isEmpty()
+                    ? buildLegacyCompletedTranscript(interviewMessageMapper.selectBySessionId(sessionId))
+                    : buildTurnTranscript(turns);
+            if (!org.springframework.util.StringUtils.hasText(transcript)) {
+                throw new IllegalStateException("没有可用于评分的完整问答");
+            }
+            InterviewReportResult result = generateReportWithRetry(transcript);
+            boolean everyTurnScored = !turns.isEmpty()
+                    && turns.stream().allMatch(turn -> turn.getScore() != null);
+            Double averageScore = everyTurnScored
+                    ? interviewTurnMapper.averageScoreBySessionId(sessionId) : null;
+            if (averageScore != null) {
+                result = new InterviewReportResult(
+                        (int) Math.round(averageScore),
+                        result.highlights(),
+                        result.weaknesses(),
+                        result.summary()
+                );
+            }
+            int markedSuccess = interviewReportMapper.markSuccess(
                     sessionId,
                     result.score(),
                     serializeReportContent(result)
             );
-            interviewSessionMapper.markReportReady(sessionId);
+            InterviewReport storedReport = markedSuccess == 1
+                    ? null : interviewReportMapper.selectBySessionId(sessionId);
+            if (markedSuccess == 1
+                    || (storedReport != null && Integer.valueOf(1).equals(storedReport.getStatus()))) {
+                interviewSessionMapper.markReportReady(sessionId);
+            }
         }catch (Exception e){
             log.error("异步生成评价报告失败:sessionId={}",sessionId,e);
             interviewReportMapper.markFailed(sessionId,"评价报告生成失败,请稍后再试");
         }finally {
-            stringRedisTemplate.delete(lockKey);
+            redisLockManager.unlock(reportLockKey, reportLockToken);
         }
     }
 
@@ -323,6 +435,8 @@ public class InterviewServiceImpl implements InterviewService {
                 // 四个字段任一为空都当成"这次没解析出合法报告",抛出去触发重试,而不是等落库才 500。
                 if(result == null
                         || result.score() == null
+                        || result.score() < 0
+                        || result.score() > 100
                         || result.highlights() == null
                         || result.weaknesses() == null
                         || result.summary() == null
@@ -341,22 +455,46 @@ public class InterviewServiceImpl implements InterviewService {
         return """
             你是一位资深技术面试评委,下面会给你一场完整的模拟面试问答记录(面试官提问与候选人回答交替出现)。
             请基于候选人的整体表现给出结构化评价:
-            1. score:总分,0~100 的整数,综合回答的准确性、深度、表达清晰度。
+            1. score:建议总分,0~100 的整数。系统存在单题评分时会使用单题平均分覆盖此值。
             2. highlights:候选人表现好的地方,2~4 条,每条一句话,要具体(引用候选人实际提到的技术点),不说空泛的场面话。
             3. weaknesses:回答中不足或值得继续深挖的地方,2~4 条,同样要具体。
             4. summary:1~2 句话的总体评价,像面试官写给 HR 的结论。
-            只依据对话记录里实际出现的内容打分和点评,不要编造候选人没有说过的内容。
+            只依据记录里已经回答的题目打分和点评,不要编造候选人没有说过的内容，
+            也不要因为用户主动结束后没有继续回答尚未出现的新题而扣分。
             """;
     }
 
-    private String buildTranscript(List<InterviewMessage> history) {
+    private String buildTurnTranscript(List<InterviewTurn> turns) {
         StringBuilder sb = new StringBuilder();
-        for(InterviewMessage m : history){
-            if("system".equals(m.getRole())){
-                continue;
+        for (InterviewTurn turn : turns) {
+            sb.append("第").append(turn.getRoundNo()).append("题\n")
+                    .append("面试官:").append(turn.getQuestionText()).append("\n")
+                    .append("候选人:").append(turn.getAnswerText()).append("\n");
+            if (turn.getScore() != null) {
+                sb.append("单题评分:").append(turn.getScore()).append("/100\n");
             }
-            String speaker = "assistant".equals(m.getRole()) ? "面试官" : "候选人";
-            sb.append(speaker).append(":").append(m.getContent()).append("\n\n");
+            if (org.springframework.util.StringUtils.hasText(turn.getEvaluation())) {
+                sb.append("单题评价:").append(turn.getEvaluation()).append("\n");
+            }
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
+
+    private String buildLegacyCompletedTranscript(List<InterviewMessage> history) {
+        StringBuilder sb = new StringBuilder();
+        String pendingQuestion = null;
+        int roundNo = 0;
+        for (InterviewMessage message : history) {
+            if ("assistant".equals(message.getRole())) {
+                pendingQuestion = aiQuestionExtractor.extract(message.getContent()).orElse(null);
+            } else if ("user".equals(message.getRole()) && pendingQuestion != null) {
+                roundNo++;
+                sb.append("第").append(roundNo).append("题\n")
+                        .append("面试官:").append(pendingQuestion).append("\n")
+                        .append("候选人:").append(message.getContent()).append("\n\n");
+                pendingQuestion = null;
+            }
         }
         return sb.toString();
     }
@@ -393,20 +531,13 @@ public class InterviewServiceImpl implements InterviewService {
         return vo;
     }
     private void onStreamError(SseEmitter emitter, Long sessionId, String lockKey,
-                               String userContent, String fullReply, Throwable error) {
+                               String lockToken, Throwable error) {
         log.error("AI 流式调用失败", error);
         try {
-            // 中途失败但已吐了半截:前端会保留这半截气泡,后端也要把「用户这轮 + 半截回复」成对存下来,
-            // 保持"前端看到的 = 后端记得的";一个字都没吐(fullReply 空)就什么都不写,前端也会删空气泡、标失败,两边一致。
-            if (!fullReply.isEmpty()) {
-                persistTurn(sessionId, userContent, fullReply);
-            }
-        } catch (Exception e) {
-            log.error("流式失败后落库也失败:sessionId={}", sessionId, e);
-        } finally {
             sendEvent(emitter, Map.of("type", "error", "message", "AI服务异常，请稍后重试"));
             emitter.completeWithError(error);
-            stringRedisTemplate.delete(lockKey);
+        } finally {
+            redisLockManager.unlock(lockKey, lockToken);
         }
     }
 
@@ -420,10 +551,72 @@ public class InterviewServiceImpl implements InterviewService {
         }
     }
 
-    private void onStreamComplete(SseEmitter emitter, Long sessionId, String lockKey, String userContent, String fullReply) {
+    private void onStreamComplete(SseEmitter emitter,
+                                  Long sessionId,
+                                  String lockKey,
+                                  String lockToken,
+                                  String userContent,
+                                  String fullReply,
+                                  String direction,
+                                  InterviewTurn currentTurn,
+                                  boolean finalRound,
+                                  int targetCount) {
         try {
-            InterviewMessage assistantMsg = persistTurn(sessionId, userContent, fullReply);
-            sendEvent(emitter, Map.of("type", "done", "messageId", assistantMsg.getId()));
+            String replyToPersist = fullReply;
+            Optional<String> nextQuestion = finalRound
+                    ? Optional.empty()
+                    : aiQuestionExtractor.extract(fullReply);
+            if (!finalRound && nextQuestion.isEmpty()) {
+                String fallback = fallbackQuestion(direction, currentTurn.getRoundNo() + 1);
+                String suffix = "\n\n【下一题】\n" + fallback;
+                replyToPersist += suffix;
+                nextQuestion = Optional.of(fallback);
+                sendEvent(emitter, Map.of("type", "delta", "content", suffix));
+            }
+
+            InterviewAnswerEvaluation evaluation = null;
+            String evaluationFailureReason = null;
+            try {
+                evaluation = evaluateAnswerWithRetry(
+                        currentTurn.getQuestionText(), userContent
+                );
+            } catch (Exception evaluationError) {
+                log.error("面试单题评分失败:sessionId={},round={}",
+                        sessionId, currentTurn.getRoundNo(), evaluationError);
+                evaluationFailureReason = "AI评分失败，生成报告时将整体评价";
+            }
+
+            InterviewPersistenceService.CompletedRound completed = persistenceService.completeRound(
+                    sessionId,
+                    currentTurn,
+                    userContent,
+                    replyToPersist,
+                    evaluation,
+                    evaluationFailureReason,
+                    nextQuestion.orElse(null),
+                    finalRound
+            );
+            InterviewMessage assistantMsg = completed.assistantMessage();
+            evictContextQuietly(sessionId);
+
+            if (finalRound) {
+                startReportGeneration(sessionId);
+            } else {
+                String question = nextQuestion.orElseThrow();
+                questionCollectDispatcher.dispatch(
+                        sessionId,
+                        assistantMsg.getId(),
+                        direction,
+                        question
+                );
+            }
+            sendEvent(emitter, Map.of(
+                    "type", "done",
+                    "messageId", assistantMsg.getId(),
+                    "finished", finalRound,
+                    "answeredCount", currentTurn.getRoundNo(),
+                    "targetCount", targetCount
+            ));
             emitter.complete();
         } catch (Exception e) {
             // 落库失败也要把流关掉并告诉前端,否则 emitter 既不 complete 也不发 error,前端 reader 永远挂着
@@ -431,20 +624,47 @@ public class InterviewServiceImpl implements InterviewService {
             sendEvent(emitter, Map.of("type", "error", "message", "回复保存失败，请重试"));
             emitter.completeWithError(e);
         } finally {
-            stringRedisTemplate.delete(lockKey);
+            redisLockManager.unlock(lockKey, lockToken);
         }
     }
 
-    // 把「用户提问 + AI 回复」成对落库 + 进上下文。user 先 insert、assistant 后 insert,id 自增保证历史顺序。
-    private InterviewMessage persistTurn(Long sessionId, String userContent, String reply) {
-        InterviewMessage userMsg = buildMessage(sessionId, "user", userContent);
-        interviewMessageMapper.insert(userMsg);
-        contextManager.append(sessionId, userMsg);
+    private InterviewAnswerEvaluation evaluateAnswerWithRetry(String question, String answer) {
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                InterviewAnswerEvaluation evaluation = chatClient
+                        .prompt()
+                        .system(buildAnswerJudgePrompt())
+                        .user("问题：" + question + "\n\n候选人回答：" + answer)
+                        .call()
+                        .entity(InterviewAnswerEvaluation.class);
+                if (evaluation == null || evaluation.score() == null
+                        || !org.springframework.util.StringUtils.hasText(evaluation.evaluation())) {
+                    throw new IllegalStateException("单题评分字段不完整");
+                }
+                return evaluation;
+            } catch (Exception e) {
+                log.warn("面试单题评分第{}次尝试失败", attempt, e);
+            }
+        }
+        throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, "单题评分失败");
+    }
 
-        InterviewMessage assistantMsg = buildMessage(sessionId, "assistant", reply);
-        interviewMessageMapper.insert(assistantMsg);
-        contextManager.append(sessionId, assistantMsg);
-        return assistantMsg;
+    private String buildAnswerJudgePrompt() {
+        return """
+                你是一位严格但公平的 Java 技术面试评分员。
+                请只根据给定问题和候选人回答进行评分，不要因为表达风格或回答长短机械扣分。
+                score 为 0 到 100 的整数：60 分表示核心结论基本正确，80 分表示正确且有关键细节，
+                95 分以上表示准确、完整并包含原理或实践权衡。
+                evaluation 用一句到两句话说明得分依据，必须指出具体正确点或缺失点。
+                """;
+    }
+
+    private void evictContextQuietly(Long sessionId) {
+        try {
+            contextManager.evict(sessionId);
+        } catch (RuntimeException e) {
+            log.warn("清理面试上下文缓存失败:sessionId={}", sessionId, e);
+        }
     }
 
     private InterviewSession mustFindOwnSession(Long sessionId) {
@@ -453,6 +673,37 @@ public class InterviewServiceImpl implements InterviewService {
             throw new BusinessException(ErrorCode.NOT_FOUND,"面试会话不存在");
         }
         return session;
+    }
+
+    private InterviewTurn ensureWaitingTurn(InterviewSession session) {
+        InterviewTurn turn = interviewTurnMapper.selectWaitingBySessionId(session.getId());
+        if (turn != null) {
+            return turn;
+        }
+
+        // 兼容迁移前已经创建、但尚未生成 interview_turn 的进行中会话。
+        InterviewMessage lastAssistant = interviewMessageMapper.selectLastAssistantBySessionId(session.getId());
+        String question = lastAssistant == null
+                ? null
+                : aiQuestionExtractor.extract(lastAssistant.getContent()).orElse(null);
+        if (!org.springframework.util.StringUtils.hasText(question)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "当前会话缺少待回答题目，请重新开始面试");
+        }
+        return interviewTurnService.createWaitingTurn(
+                session.getId(),
+                session.getUserId(),
+                answeredQuestionCount(session) + 1,
+                question
+        );
+    }
+
+    private int targetQuestionCount(InterviewSession session) {
+        return session.getTargetQuestionCount() == null
+                ? DEFAULT_TARGET_QUESTION_COUNT : session.getTargetQuestionCount();
+    }
+
+    private int answeredQuestionCount(InterviewSession session) {
+        return session.getAnsweredQuestionCount() == null ? 0 : session.getAnsweredQuestionCount();
     }
 
     private List<Message> toSpringAiMessages(List<InterviewMessage> history) {
@@ -468,12 +719,22 @@ public class InterviewServiceImpl implements InterviewService {
         return messages;
     }
 
-    private InterviewMessage buildMessage(Long sessionId, String role, String content) {
-        InterviewMessage message = new InterviewMessage();
-        message.setSessionId(sessionId);
-        message.setRole(role);
-        message.setContent(content);
-        return message;
+    private String buildFinalRoundInstruction() {
+        return """
+                本轮是这场面试的最后一道题。请先简短点评候选人的本次回答，
+                然后以【面试结束】收尾。严禁再输出【下一题】，也不要再提出任何新问题。
+                """;
+    }
+
+    private String fallbackQuestion(String direction, int roundNo) {
+        return switch (direction) {
+            case "java_concurrency" -> "请结合实际项目，说明如何定位和解决一次 Java 并发安全问题？";
+            case "jvm" -> "请说明你会如何排查一次 Java 应用内存持续增长的问题？";
+            case "mysql" -> "请结合执行计划说明你会如何定位并优化一条慢 SQL？";
+            case "redis" -> "请说明缓存穿透、缓存击穿和缓存雪崩的区别以及应对方案？";
+            case "system_design" -> "请说明系统流量突然增长时，你会从哪些层面进行扩容和保护？";
+            default -> "请结合项目经验介绍一个你解决过的技术问题，并说明取舍？";
+        };
     }
 
     private String buildSystemPrompt(InterviewDirection direction) {
@@ -489,6 +750,12 @@ public class InterviewServiceImpl implements InterviewService {
                 4. 根据回答质量灵活调整:答得好,简短肯定一句就切换到新维度;答得含糊或答不上来,可以给一点提示或换个角度再问一次,仍答不上就换维度,别在一个点上僵持。
                 5. 心里记着已经问过哪些维度,有意识地让问题覆盖面铺开;等上面这些维度大多覆盖到了,再挑候选人答得最好或最薄弱的点做适度深入。
                 6. 语气专业、简洁,像真实面试官一样自然对话,不要用"好的,我们开始吧"这类机械化开场白,也不要每句话都用 Markdown 列表排版。
+                7. 每次回复可以先简短点评候选人的回答,但最后必须使用下面的固定格式提出下一题:
+
+                【下一题】
+                这里写一个完整、脱离上下文也能理解的问题
+
+                8. "【下一题】"后只能出现一道题,题目必须独立完整。不要使用"这里""刚才这个方案""那为什么"等依赖上文的指代。
                 """.formatted(direction.getLabel(), direction.getFocus());
     }
 }

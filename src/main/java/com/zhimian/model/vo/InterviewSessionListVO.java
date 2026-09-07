@@ -10,6 +10,9 @@ public class InterviewSessionListVO {
     private String direction;
     private String title;
     private Integer status;
+    private Integer targetQuestionCount;
+    private Integer answeredQuestionCount;
+    private String finishReason;
     private LocalDateTime createTime;
     private LocalDateTime endTime;
 }

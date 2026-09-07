@@ -27,6 +27,7 @@
             status = 1,
             error_message = NULL
         WHERE session_id = #{sessionId}
+          AND status = 0
     </update>
 
     <update id="markFailed">
@@ -34,5 +35,6 @@
         SET status = 2,
             error_message = #{errorMessage}
         WHERE session_id =#{sessionId}
+          AND status = 0
     </update>
 </mapper>

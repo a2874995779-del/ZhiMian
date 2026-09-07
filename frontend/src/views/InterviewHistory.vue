@@ -155,6 +155,7 @@ async function loadReport(id: number) {
             <span class="record-title">{{ item.title }}</span>
           </div>
           <div class="record-side">
+            <span class="record-progress">{{ item.answeredQuestionCount }}/{{ item.targetQuestionCount }} 题</span>
             <span class="zm-tag" :class="`zm-tag--${STATUS_META[item.status].tone}`">
               {{ STATUS_META[item.status].label }}
             </span>
@@ -296,6 +297,11 @@ async function loadReport(id: number) {
 .record-time {
   font-size: 12px;
   color: var(--zm-ink-faint);
+}
+
+.record-progress {
+  font-size: 12px;
+  color: var(--zm-ink-soft);
 }
 
 .empty {

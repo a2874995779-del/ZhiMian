@@ -9,16 +9,30 @@
 
     <select id="countCorrectByUser" resultType="int">
         SELECT COUNT(*)
-        FROM answer_record
+        FROM (
+            SELECT user_id
+            FROM answer_record
+            WHERE result = 1
+            UNION ALL
+            SELECT user_id
+            FROM interview_turn
+            WHERE status = 2 AND result = 1
+        ) correct_record
         WHERE user_id = #{userId}
-          AND result = 1
     </select>
 
     <select id="countCorrectByUserBetween" resultType="int">
         SELECT COUNT(*)
-        FROM answer_record
+        FROM (
+            SELECT user_id, create_time
+            FROM answer_record
+            WHERE result = 1
+            UNION ALL
+            SELECT user_id, answered_time AS create_time
+            FROM interview_turn
+            WHERE status = 2 AND result = 1
+        ) correct_record
         WHERE user_id = #{userId}
-          AND result = 1
           AND create_time &gt;= #{start}
           AND create_time &lt; #{end}
     </select>
@@ -27,7 +41,14 @@
         SELECT DATE(create_time) AS answer_date,
                COUNT(*) AS total_count,
                SUM(CASE WHEN result = 1 THEN 1 ELSE 0 END) AS correct_count
-        FROM answer_record
+        FROM (
+            SELECT user_id, result, create_time
+            FROM answer_record
+            UNION ALL
+            SELECT user_id, result, answered_time AS create_time
+            FROM interview_turn
+            WHERE status = 2
+        ) learning_record
         WHERE user_id = #{userId}
           AND create_time &gt;= #{start}
           AND create_time &lt; #{end}
@@ -37,9 +58,40 @@
 
     <select id="selectCorrectDates" resultType="java.time.LocalDate">
         SELECT DISTINCT DATE(create_time)
-        FROM answer_record
+        FROM (
+            SELECT user_id, result, create_time
+            FROM answer_record
+            UNION ALL
+            SELECT user_id, result, answered_time AS create_time
+            FROM interview_turn
+            WHERE status = 2
+        ) learning_record
         WHERE user_id = #{userId}
           AND result = 1
         ORDER BY DATE(create_time) DESC
+    </select>
+
+    <select id="selectCorrectRank" resultType="com.zhimian.model.dto.RankStatDTO">
+        SELECT user_id, COUNT(*) AS count
+        FROM (
+            SELECT user_id, create_time
+            FROM answer_record
+            WHERE result = 1
+            UNION ALL
+            SELECT user_id, answered_time AS create_time
+            FROM interview_turn
+            WHERE status = 2 AND result = 1
+        ) correct_record
+        <where>
+            <if test="start != null">
+                create_time &gt;= #{start}
+            </if>
+            <if test="end != null">
+                AND create_time &lt; #{end}
+            </if>
+        </where>
+        GROUP BY user_id
+        ORDER BY count DESC, user_id ASC
+        LIMIT #{limit}
     </select>
 </mapper>

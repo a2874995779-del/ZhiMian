@@ -77,4 +77,17 @@
         ORDER BY view_count DESC
         LIMIT #{limit}
     </select>
+
+    <select id="existsByTitle" resultType="boolean">
+        SELECT COUNT(*) > 0
+        FROM question
+        WHERE is_deleted = 0
+          AND LOWER(TRIM(title)) = LOWER(TRIM(#{title}))
+    </select>
+
+    <select id="selectAllTitles" resultType="string">
+        SELECT title
+        FROM question
+        WHERE is_deleted = 0
+    </select>
 </mapper>

@@ -2,6 +2,7 @@ package com.zhimian.mapper;
 
 import com.zhimian.model.entity.AnswerRecord;
 import com.zhimian.model.dto.AnswerDailyStatDTO;
+import com.zhimian.model.dto.RankStatDTO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -24,4 +25,8 @@ public interface AnswerRecordMapper {
                                               @Param("end") LocalDateTime end);
 
     List<LocalDate> selectCorrectDates(@Param("userId") Long userId);
+
+    List<RankStatDTO> selectCorrectRank(@Param("start") LocalDateTime start,
+                                        @Param("end") LocalDateTime end,
+                                        @Param("limit") int limit);
 }

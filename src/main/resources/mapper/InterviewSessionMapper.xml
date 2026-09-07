@@ -3,8 +3,14 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.zhimian.mapper.InterviewSessionMapper">
     <insert id="insert" keyProperty="id" useGeneratedKeys="true">
-        INSERT INTO interview_session (user_id,direction,title,status)
-        VALUES (#{userId},#{direction},#{title},#{status})
+        INSERT INTO interview_session (
+            user_id, direction, title, status, target_question_count,
+            answered_question_count, finish_reason
+        )
+        VALUES (
+            #{userId}, #{direction}, #{title}, #{status}, #{targetQuestionCount},
+            #{answeredQuestionCount}, #{finishReason}
+        )
     </insert>
 
     <select id="countInProgress" resultType="long">
@@ -15,7 +21,8 @@
     
     <select id="selectById" resultType="com.zhimian.model.entity.InterviewSession">
         SELECT
-            id,user_id,direction,title,status,end_time,create_time,update_time,is_deleted
+            id,user_id,direction,title,status,target_question_count,answered_question_count,
+            finish_reason,end_time,create_time,update_time,is_deleted
         FROM interview_session
         WHERE id =#{id} AND is_deleted = 0
     </select>
@@ -28,7 +35,8 @@
     
     <select id="selectPageByUserId" resultType="com.zhimian.model.entity.InterviewSession">
         SELECT
-            id,user_id,direction,title,status,end_time,create_time,update_time,is_deleted
+            id,user_id,direction,title,status,target_question_count,answered_question_count,
+            finish_reason,end_time,create_time,update_time,is_deleted
         FROM interview_session
         WHERE user_id = #{userId} AND is_deleted = 0
         ORDER BY create_time DESC
@@ -50,10 +58,19 @@
     <update id="endSession">
         UPDATE interview_session
         SET status = 1,
+            finish_reason = COALESCE(finish_reason, #{finishReason}),
             end_time = IFNULL(end_time,NOW())
         WHERE id=#{id}
         AND is_deleted = 0
         AND status = 0
+    </update>
+
+    <update id="incrementAnsweredCount">
+        UPDATE interview_session
+        SET answered_question_count = answered_question_count + 1
+        WHERE id = #{id}
+          AND is_deleted = 0
+          AND status = 0
     </update>
 
     <update id="markReportReady">

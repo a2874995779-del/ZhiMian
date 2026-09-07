@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhimian.mapper.InterviewTurnMapper">
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO interview_turn (
+            session_id, user_id, round_no, question_text, status
+        ) VALUES (
+            #{sessionId}, #{userId}, #{roundNo}, #{questionText}, #{status}
+        )
+    </insert>
+
+    <select id="selectWaitingBySessionId" resultType="com.zhimian.model.entity.InterviewTurn">
+        SELECT id, session_id, user_id, round_no, question_text, answer_text,
+               score, result, evaluation, status, answered_time, create_time, update_time
+        FROM interview_turn
+        WHERE session_id = #{sessionId}
+          AND status = 0
+        ORDER BY round_no DESC
+        LIMIT 1
+    </select>
+
+    <update id="markEvaluated">
+        UPDATE interview_turn
+        SET answer_text = #{answerText},
+            score = #{score},
+            result = #{result},
+            evaluation = #{evaluation},
+            status = 2,
+            answered_time = NOW()
+        WHERE id = #{id}
+          AND status = 0
+    </update>
+
+    <update id="markEvaluationFailed">
+        UPDATE interview_turn
+        SET answer_text = #{answerText},
+            evaluation = #{evaluation},
+            status = 3,
+            answered_time = NOW()
+        WHERE id = #{id}
+          AND status = 0
+    </update>
+
+    <update id="skipWaiting">
+        UPDATE interview_turn
+        SET status = 4
+        WHERE session_id = #{sessionId}
+          AND status = 0
+    </update>
+
+    <select id="selectAnsweredBySessionId" resultType="com.zhimian.model.entity.InterviewTurn">
+        SELECT id, session_id, user_id, round_no, question_text, answer_text,
+               score, result, evaluation, status, answered_time, create_time, update_time
+        FROM interview_turn
+        WHERE session_id = #{sessionId}
+          AND status IN (2, 3)
+          AND answer_text IS NOT NULL
+        ORDER BY round_no ASC
+    </select>
+
+    <select id="averageScoreBySessionId" resultType="java.lang.Double">
+        SELECT AVG(score)
+        FROM interview_turn
+        WHERE session_id = #{sessionId}
+          AND status = 2
+          AND score IS NOT NULL
+    </select>
+</mapper>

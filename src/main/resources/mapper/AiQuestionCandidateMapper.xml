@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhimian.mapper.AiQuestionCandidateMapper">
+
+    <sql id="candidateColumns">
+        id,
+        title,
+        normalized_title,
+        fingerprint,
+        answer,
+        difficulty,
+        category_id,
+        CAST(tag_ids AS CHAR) AS tag_ids_json,
+        direction,
+        source_session_id,
+        source_message_id,
+        duplicate_count,
+        status,
+        error_message,
+        question_id,
+        create_time,
+        update_time
+    </sql>
+
+    <select id="existsBySourceMessage" resultType="boolean">
+        SELECT COUNT(*) > 0
+        FROM ai_question_candidate
+        WHERE source_message_id = #{sourceMessageId}
+    </select>
+
+    <insert id="insertIgnore" useGeneratedKeys="true" keyProperty="id">
+        INSERT IGNORE INTO ai_question_candidate (
+            title,
+            normalized_title,
+            fingerprint,
+            direction,
+            source_session_id,
+            source_message_id,
+            status
+        ) VALUES (
+            #{title},
+            #{normalizedTitle},
+            #{fingerprint},
+            #{direction},
+            #{sourceSessionId},
+            #{sourceMessageId},
+            0
+        )
+    </insert>
+
+    <update id="incrementDuplicate">
+        UPDATE ai_question_candidate
+        SET duplicate_count = duplicate_count + 1,
+            update_time = NOW()
+        WHERE fingerprint = #{fingerprint}
+    </update>
+
+    <update id="markEnriched">
+        UPDATE ai_question_candidate
+        SET answer = #{answer},
+            difficulty = #{difficulty},
+            category_id = #{categoryId},
+            tag_ids = CAST(#{tagIdsJson} AS JSON),
+            status = 1,
+            error_message = NULL,
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status = 0
+    </update>
+
+    <update id="markFailed">
+        UPDATE ai_question_candidate
+        SET status = 4,
+            error_message = #{errorMessage},
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status = 0
+    </update>
+
+    <select id="selectById" resultType="com.zhimian.model.entity.AiQuestionCandidate">
+        SELECT <include refid="candidateColumns"/>
+        FROM ai_question_candidate
+        WHERE id = #{id}
+    </select>
+
+    <sql id="candidateWhere">
+        <where>
+            <if test="query.status != null">
+                status = #{query.status}
+            </if>
+            <if test="query.direction != null and query.direction != ''">
+                AND direction = #{query.direction}
+            </if>
+            <if test="query.keyword != null and query.keyword != ''">
+                AND title LIKE CONCAT('%', #{query.keyword}, '%')
+            </if>
+        </where>
+    </sql>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*)
+        FROM ai_question_candidate
+        <include refid="candidateWhere"/>
+    </select>
+
+    <select id="selectPage" resultType="com.zhimian.model.entity.AiQuestionCandidate">
+        SELECT <include refid="candidateColumns"/>
+        FROM ai_question_candidate
+        <include refid="candidateWhere"/>
+        ORDER BY duplicate_count DESC, create_time DESC, id DESC
+        LIMIT #{offset}, #{query.pageSize}
+    </select>
+
+    <update id="markPublishing">
+        UPDATE ai_question_candidate
+        SET status = 5,
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status IN (1, 4)
+    </update>
+
+    <update id="markAccepted">
+        UPDATE ai_question_candidate
+        SET status = 2,
+            question_id = #{questionId},
+            error_message = NULL,
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status = 5
+    </update>
+
+    <update id="markIgnored">
+        UPDATE ai_question_candidate
+        SET status = 3,
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status IN (0, 1, 4)
+    </update>
+
+</mapper>

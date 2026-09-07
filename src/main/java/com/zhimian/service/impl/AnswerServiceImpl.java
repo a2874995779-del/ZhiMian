@@ -8,6 +8,7 @@ import com.zhimian.mapper.QuestionMapper;
 import com.zhimian.mapper.UserMapper;
 import com.zhimian.model.dto.AnswerDailyStatDTO;
 import com.zhimian.model.dto.AnswerSubmitDTO;
+import com.zhimian.model.dto.RankStatDTO;
 import com.zhimian.model.entity.AnswerRecord;
 import com.zhimian.model.entity.Question;
 import com.zhimian.model.entity.User;
@@ -16,15 +17,11 @@ import com.zhimian.model.vo.RankVO;
 import com.zhimian.service.AnswerService;
 import com.zhimian.service.WrongQuestionService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -33,14 +30,9 @@ public class AnswerServiceImpl implements AnswerService {
     private final AnswerRecordMapper answerRecordMapper;
     private final QuestionMapper questionMapper;
     private final UserMapper userMapper;
-    private final StringRedisTemplate redisTemplate;
     private final WrongQuestionService wrongQuestionService;
 
-    private static final String RANK_TOTAL_KEY = "zhimian:rank:answer:total";
-    private static final String RANK_DAILY_PREFIX = "zhimian:rank:answer:";
-    private static final long RANK_DAILY_TTL_DAYS = 7;
     private static final int DAILY_GOAL = 10;
-    private static final DateTimeFormatter DAILY_KEY_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final String[] WEEK_LABELS = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
     @Transactional
     @Override
@@ -56,16 +48,6 @@ public class AnswerServiceImpl implements AnswerService {
         record.setResult(dto.getResult());
         answerRecordMapper.insert(record);
         wrongQuestionService.recordAnswer(questionId,dto.getResult());
-        if(dto.getResult() == 1){
-            String member = userId.toString();
-            redisTemplate.opsForZSet().incrementScore(RANK_TOTAL_KEY,member,1);
-            String dailyKey = todayDailyKey();
-            redisTemplate.opsForZSet().incrementScore(dailyKey,member,1);
-            Long ttl = redisTemplate.getExpire(dailyKey);
-            if(ttl !=null && ttl==-1){
-                redisTemplate.expire(dailyKey,RANK_DAILY_TTL_DAYS, TimeUnit.DAYS);
-            }
-        }
     }
 
     @Override
@@ -73,29 +55,35 @@ public class AnswerServiceImpl implements AnswerService {
         if(limit <= 0){
             return List.of();
         }
-        String key = resolveRankKey(type);
-        Set<ZSetOperations.TypedTuple<String>> tuples = redisTemplate.opsForZSet().reverseRangeWithScores(
-                key,0,limit-1);
-        if (tuples == null || tuples.isEmpty()){
+        if (!"total".equals(type) && !"daily".equals(type)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "排行榜类型只能是total或daily");
+        }
+        int safeLimit = Math.min(limit, 100);
+        LocalDateTime start = null;
+        LocalDateTime end = null;
+        if ("daily".equals(type)) {
+            LocalDate today = LocalDate.now();
+            start = today.atStartOfDay();
+            end = today.plusDays(1).atStartOfDay();
+        }
+        List<RankStatDTO> stats = answerRecordMapper.selectCorrectRank(start, end, safeLimit);
+        if (stats.isEmpty()) {
             return List.of();
         }
-        List<Long> userIds = new ArrayList<>();
-        for(ZSetOperations.TypedTuple<String> tuple : tuples){
-            userIds.add(Long.valueOf(tuple.getValue()));
-        }
+        List<Long> userIds = stats.stream().map(RankStatDTO::getUserId).toList();
         Map<Long,String> nicknameMap = new HashMap<>();
         for(User u : userMapper.selectByIds(userIds)){
             nicknameMap.put(u.getId(),u.getNickname());
         }
         List<RankVO> result = new ArrayList<>();
         int rank=1;
-        for(ZSetOperations.TypedTuple<String> tuple : tuples){
-            Long userId = Long.valueOf(tuple.getValue());
+        for(RankStatDTO stat : stats){
+            Long userId = stat.getUserId();
             RankVO vo = new RankVO();
             vo.setRank(rank++);
             vo.setUserId(userId);
             vo.setNickname(nicknameMap.get(userId));
-            vo.setCount(tuple.getScore().intValue());
+            vo.setCount(stat.getCount());
             result.add(vo);
         }
         return result;
@@ -123,17 +111,6 @@ public class AnswerServiceImpl implements AnswerService {
         vo.setStreakDays(calculateStreakDays(userId, today));
         vo.setTrend(buildWeeklyTrend(userId, startOfWeek));
         return vo;
-    }
-
-    private String resolveRankKey(String type) {
-        if("daily".equals(type)){
-            return todayDailyKey();
-        }
-        return RANK_TOTAL_KEY;
-    }
-
-    private String todayDailyKey() {
-        return RANK_DAILY_PREFIX + LocalDate.now().format(DAILY_KEY_FORMATTER);
     }
 
     private int calculateStreakDays(Long userId, LocalDate today) {

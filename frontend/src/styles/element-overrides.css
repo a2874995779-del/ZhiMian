@@ -59,6 +59,16 @@
   background-color: rgba(0, 0, 0, 0.28);
 }
 
+.el-message-box {
+  background: var(--zm-bg-elevated);
+}
+
+@media (max-width: 520px) {
+  .el-message-box {
+    width: calc(100vw - 32px);
+  }
+}
+
 .el-tag {
   border-radius: var(--zm-radius-pill);
   font-family: var(--zm-font-mono);

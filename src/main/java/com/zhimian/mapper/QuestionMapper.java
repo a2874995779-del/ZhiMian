@@ -24,4 +24,8 @@ public interface QuestionMapper {
     void incrementView(@Param("id") Long questionId,@Param("delta") int delta);
 
     List<Question> selectHot(@Param("limit") int hotLimit);
+
+    boolean existsByTitle(@Param("title") String title);
+
+    List<String> selectAllTitles();
 }
