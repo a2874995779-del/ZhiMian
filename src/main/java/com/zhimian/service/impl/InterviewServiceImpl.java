@@ -20,11 +20,15 @@ import com.zhimian.model.entity.InterviewMessage;
 import com.zhimian.model.entity.InterviewReport;
 import com.zhimian.model.entity.InterviewSession;
 import com.zhimian.model.entity.InterviewTurn;
-import com.zhimian.model.enums.InterviewDirection;
+import com.zhimian.model.enums.InterviewMode;
+import com.zhimian.model.interview.InterviewPlan;
+import com.zhimian.model.interview.InterviewPlanItem;
 import com.zhimian.model.vo.*;
 import com.zhimian.ratelimit.RateLimiter;
 import com.zhimian.redis.RedisLockManager;
 import com.zhimian.service.InterviewPersistenceService;
+import com.zhimian.service.InterviewExpirationService;
+import com.zhimian.service.InterviewPlanService;
 import com.zhimian.service.InterviewService;
 import com.zhimian.service.InterviewTurnService;
 import com.zhimian.util.AiQuestionExtractor;
@@ -82,15 +86,14 @@ public class InterviewServiceImpl implements InterviewService {
     private final AiQuestionCollectDispatcher questionCollectDispatcher;
     private final RedisLockManager redisLockManager;
     private final InterviewPersistenceService persistenceService;
+    private final InterviewPlanService interviewPlanService;
+    private final InterviewExpirationService interviewExpirationService;
     @Qualifier("reportExecutor")
     private final Executor reportExecutor;
 
     @Override
     public InterviewSessionVO createInterview(CreateInterviewDTO dto) {
-        InterviewDirection direction = InterviewDirection.fromCode(dto.getDirection());
-        if(direction == null) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR,"暂不支持该面试方向");
-        }
+        InterviewPlan plan = interviewPlanService.build(dto);
         Long userId = UserContext.getUserId();
         String createLockKey = CREATE_LOCK_PREFIX + userId;
         String createLockToken = redisLockManager.tryLock(createLockKey, CREATE_LOCK_TTL);
@@ -98,23 +101,29 @@ public class InterviewServiceImpl implements InterviewService {
             throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "正在创建面试，请勿重复提交");
         }
         try {
+            interviewExpirationService.expireInactiveForUser(userId);
             long activeCount = interviewSessionMapper.countInProgress(userId);
             if(activeCount >=MAX_ACTIVE_SESSIONS){
-                throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"面试中的会话达到上限，若想继续，请关闭先前对话");
+                throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"面试中的会话达到上限， 若想继续，请关闭先前对话");
             }
 
             InterviewSession session = new InterviewSession();
             session.setUserId(userId);
-            session.setDirection(direction.getCode());
-            session.setTitle(direction.getLabel() + " . "+ LocalDate.now());
+            session.setDirection(plan.mode().equals(InterviewMode.DIRECTION.getCode())
+                    ? plan.code() : "scenario");
+            session.setMode(plan.mode());
+            session.setScenarioCode(plan.mode().equals(InterviewMode.SCENARIO.getCode()) ? plan.code() : null);
+            session.setPlanJson(interviewPlanService.serialize(plan));
+            session.setTitle(plan.title() + " . " + LocalDate.now());
             session.setStatus(0);
             session.setTargetQuestionCount(dto.getTargetQuestionCount() == null
                     ? DEFAULT_TARGET_QUESTION_COUNT : dto.getTargetQuestionCount());
             session.setAnsweredQuestionCount(0);
 
-            String systemPrompt = buildSystemPrompt(direction);
-            String openingQuestion = firstQuestion(direction);
-            String openingMessage = buildFastOpeningMessage(direction, openingQuestion);
+            String systemPrompt = buildSystemPrompt(plan);
+            InterviewPlanItem openingItem = interviewPlanService.itemForRound(plan, 1);
+            String openingQuestion = openingItem.questionText();
+            String openingMessage = buildOpeningMessage(plan, openingItem);
             InterviewPersistenceService.CreatedInterview created = persistenceService.create(
                     session, systemPrompt, openingMessage, openingQuestion
             );
@@ -122,13 +131,16 @@ public class InterviewServiceImpl implements InterviewService {
             questionCollectDispatcher.dispatch(
                     session.getId(),
                     created.assistantMessage().getId(),
-                    direction.getCode(),
+                    session.getDirection(),
                     openingQuestion
             );
 
             InterviewSessionVO vo = new InterviewSessionVO();
             vo.setId(session.getId());
-            vo.setDirection(direction.getCode());
+            vo.setDirection(session.getDirection());
+            vo.setMode(session.getMode());
+            vo.setScenarioCode(session.getScenarioCode());
+            vo.setTitle(session.getTitle());
             vo.setOpeningMessage(openingMessage);
             vo.setTargetQuestionCount(session.getTargetQuestionCount());
             vo.setAnsweredQuestionCount(0);
@@ -138,21 +150,14 @@ public class InterviewServiceImpl implements InterviewService {
         }
     }
 
-    private String buildFastOpeningMessage(InterviewDirection direction, String openingQuestion) {
-        return "你好，我是本场 " + direction.getLabel()
-                + " 方向的面试官。我们直接开始。\n\n【下一题】\n"
-                + openingQuestion;
-    }
-
-    private String firstQuestion(InterviewDirection direction) {
-        return switch (direction.getCode()) {
-            case "java_concurrency" -> "线程池的核心参数有哪些？为什么不推荐直接使用 Executors 创建线程池？";
-            case "jvm" -> "你能从运行时数据区开始，整体讲一下 JVM 的内存模型吗？";
-            case "mysql" -> "MySQL 的 B+ 树索引为什么适合范围查询？";
-            case "redis" -> "Redis 常见的数据结构有哪些？你在项目里会怎么选择？";
-            case "system_design" -> "如果让你设计一个高并发排行榜服务，你会怎么设计读写链路？";
-            default -> "请介绍一个你最熟悉的技术点，并说明它在项目中的使用场景。";
+    private String buildOpeningMessage(InterviewPlan plan, InterviewPlanItem item) {
+        String[] templates = {
+                "你好，今天我们进行一场%s。整场会围绕%s展开，我会逐步覆盖不同模块。\n\n【下一题】\n%s",
+                "欢迎进入%s。今天不预设固定路线，我会根据本场计划依次考察%s。\n\n【下一题】\n%s",
+                "我们开始今天的%s。先从%s切入，后面会结合工程场景继续深入。\n\n【下一题】\n%s"
         };
+        int index = Math.floorMod(java.util.UUID.randomUUID().hashCode(), templates.length);
+        return templates[index].formatted(plan.title(), item.moduleName(), item.questionText());
     }
 
     @Override
@@ -177,7 +182,16 @@ public class InterviewServiceImpl implements InterviewService {
         }
 
         try {
+            if (interviewExpirationService.expireWhileHoldingChatLock(sessionId)) {
+                throw new BusinessException(
+                        ErrorCode.CONFLICT, "面试已因长时间未操作自动结束，请重新开始"
+                );
+            }
             InterviewTurn currentTurn = ensureWaitingTurn(session);
+            InterviewPlan plan = interviewPlanService.load(session);
+            InterviewPlanItem nextItem = interviewPlanService.itemForRound(
+                    plan, currentTurn.getRoundNo() + 1
+            );
             int targetCount = targetQuestionCount(session);
             int answeredCount = answeredQuestionCount(session);
             boolean finalRound = answeredCount + 1 >= targetCount;
@@ -185,6 +199,8 @@ public class InterviewServiceImpl implements InterviewService {
             List<Message> springAiMessages = toSpringAiMessages(history);
             if (finalRound) {
                 springAiMessages.add(new SystemMessage(buildFinalRoundInstruction()));
+            } else if (nextItem != null) {
+                springAiMessages.add(new SystemMessage(buildNextQuestionInstruction(nextItem)));
             }
             springAiMessages.add(new UserMessage(dto.getContent()));
 
@@ -217,6 +233,7 @@ public class InterviewServiceImpl implements InterviewService {
                                             fullReply.toString(),
                                             session.getDirection(),
                                             currentTurn,
+                                            plan,
                                             finalRound,
                                             targetCount
                                     );
@@ -254,6 +271,7 @@ public class InterviewServiceImpl implements InterviewService {
     @Override
     public PageResult<InterviewSessionListVO> listSessions(InterviewSessionQueryDTO dto) {
         Long userId = UserContext.getUserId();
+        interviewExpirationService.expireInactiveForUser(userId);
         long total = interviewSessionMapper.countByUserId(userId);
         if(total==0){
             return PageResult.of(List.of(),0,dto.getPageNum(),dto.getPageSize());
@@ -271,6 +289,22 @@ public class InterviewServiceImpl implements InterviewService {
     @Override
     public InterviewSessionDetailVO getSessionDetail(Long sessionId) {
         InterviewSession session = mustFindOwnSession(sessionId);
+        if (session.getStatus() == 0 && interviewExpirationService.expireIfInactive(sessionId)) {
+            session = mustFindOwnSession(sessionId);
+        }
+        return buildSessionDetail(session);
+    }
+
+    @Override
+    public InterviewSessionDetailVO getCurrentSession() {
+        Long userId = UserContext.getUserId();
+        interviewExpirationService.expireInactiveForUser(userId);
+        InterviewSession session = interviewSessionMapper.selectLatestInProgressByUserId(userId);
+        return session == null ? null : buildSessionDetail(session);
+    }
+
+    private InterviewSessionDetailVO buildSessionDetail(InterviewSession session) {
+        Long sessionId = session.getId();
         List<InterviewMessage> history =interviewMessageMapper.selectBySessionId(sessionId);
 
         List<InterviewMessageVO> messageVOList = new ArrayList<>();
@@ -292,14 +326,16 @@ public class InterviewServiceImpl implements InterviewService {
     public InterviewReportStatusVO finishInterview(Long sessionId) {
         InterviewSession session = mustFindOwnSession(sessionId);
 
+        if (InterviewExpirationService.FINISH_REASON.equals(session.getFinishReason())) {
+            throw new BusinessException(
+                    ErrorCode.CONFLICT, "面试已因长时间未操作自动结束，不生成评价报告"
+            );
+        }
+
         InterviewReport existing = interviewReportMapper.selectBySessionId(sessionId);
         if (existing != null && Integer.valueOf(1).equals(existing.getStatus())) {
             interviewSessionMapper.markReportReady(sessionId);
             return buildReportStatus(existing);
-        }
-
-        if (answeredQuestionCount(session) == 0) {
-            throw new BusinessException(ErrorCode.CONFLICT, "至少回答一道题后才能结束面试");
         }
 
         String chatLockKey = CHAT_LOCK_PREFIX + sessionId;
@@ -308,6 +344,15 @@ public class InterviewServiceImpl implements InterviewService {
             throw new BusinessException(ErrorCode.CONFLICT, "当前回答正在处理中，请稍后再结束面试");
         }
         try {
+            if (session.getStatus() == 0
+                    && interviewExpirationService.expireWhileHoldingChatLock(sessionId)) {
+                throw new BusinessException(
+                        ErrorCode.CONFLICT, "面试已因长时间未操作自动结束，不生成评价报告"
+                );
+            }
+            if (answeredQuestionCount(session) == 0) {
+                throw new BusinessException(ErrorCode.CONFLICT, "至少回答一道题后才能结束面试");
+            }
             if (session.getStatus() == 0) {
                 persistenceService.finishByUser(sessionId);
             }
@@ -413,7 +458,16 @@ public class InterviewServiceImpl implements InterviewService {
 
     @Override
     public InterviewReportStatusVO getReportStatus(Long sessionId) {
-        mustFindOwnSession(sessionId);
+        InterviewSession session = mustFindOwnSession(sessionId);
+        if (session.getStatus() == 0 && interviewExpirationService.expireIfInactive(sessionId)) {
+            session = mustFindOwnSession(sessionId);
+        }
+        if (InterviewExpirationService.FINISH_REASON.equals(session.getFinishReason())) {
+            InterviewReportStatusVO unavailable = new InterviewReportStatusVO();
+            unavailable.setStatus(2);
+            unavailable.setMessage("面试已因长时间未操作自动结束，不生成评价报告");
+            return unavailable;
+        }
         InterviewReport report = interviewReportMapper.selectBySessionId(sessionId);
         if(report == null){
             return buildGeneratingStatus("报告尚未开始生成");
@@ -559,18 +613,21 @@ public class InterviewServiceImpl implements InterviewService {
                                   String fullReply,
                                   String direction,
                                   InterviewTurn currentTurn,
+                                  InterviewPlan plan,
                                   boolean finalRound,
                                   int targetCount) {
         try {
             String replyToPersist = fullReply;
-            Optional<String> nextQuestion = finalRound
+            InterviewPlanItem nextItem = interviewPlanService.itemForRound(
+                    plan, currentTurn.getRoundNo() + 1
+            );
+            Optional<String> nextQuestion = finalRound || nextItem == null
                     ? Optional.empty()
-                    : aiQuestionExtractor.extract(fullReply);
-            if (!finalRound && nextQuestion.isEmpty()) {
-                String fallback = fallbackQuestion(direction, currentTurn.getRoundNo() + 1);
-                String suffix = "\n\n【下一题】\n" + fallback;
+                    : Optional.of(nextItem.questionText());
+            if (!finalRound && nextQuestion.isPresent()
+                    && aiQuestionExtractor.extract(fullReply).isEmpty()) {
+                String suffix = "\n\n【下一题】\n" + nextQuestion.get();
                 replyToPersist += suffix;
-                nextQuestion = Optional.of(fallback);
                 sendEvent(emitter, Map.of("type", "delta", "content", suffix));
             }
 
@@ -726,29 +783,18 @@ public class InterviewServiceImpl implements InterviewService {
                 """;
     }
 
-    private String fallbackQuestion(String direction, int roundNo) {
-        return switch (direction) {
-            case "java_concurrency" -> "请结合实际项目，说明如何定位和解决一次 Java 并发安全问题？";
-            case "jvm" -> "请说明你会如何排查一次 Java 应用内存持续增长的问题？";
-            case "mysql" -> "请结合执行计划说明你会如何定位并优化一条慢 SQL？";
-            case "redis" -> "请说明缓存穿透、缓存击穿和缓存雪崩的区别以及应对方案？";
-            case "system_design" -> "请说明系统流量突然增长时，你会从哪些层面进行扩容和保护？";
-            default -> "请结合项目经验介绍一个你解决过的技术问题，并说明取舍？";
-        };
-    }
-
-    private String buildSystemPrompt(InterviewDirection direction) {
+    private String buildSystemPrompt(InterviewPlan plan) {
         return """
-                你是一位经验丰富的 Java 后端资深面试官,正在对候选人进行一场专注于「%s」方向的技术面试。
+                你是一位经验丰富的 Java 后端资深面试官,正在进行一场「%s」。
 
-                这场面试需要考察以下几个维度:%s。
+                本场面试的总体考察范围是:%s。
 
                 面试策略(重要):
                 1. 每次只问一个问题,不要一次性抛出多个问题。
-                2. 以广度为主、深度为辅:目标是在有限轮次里尽量覆盖上面列出的多个维度,系统地考察候选人的知识面,而不是抓着某一个点一直往深里追问。
-                3. 控制追问:对同一个知识点最多追问一次。无论这一点答得好不好,追问一次之后就要主动切换到一个还没考察过的维度,不要顺着候选人上一句话无限深挖。
-                4. 根据回答质量灵活调整:答得好,简短肯定一句就切换到新维度;答得含糊或答不上来,可以给一点提示或换个角度再问一次,仍答不上就换维度,别在一个点上僵持。
-                5. 心里记着已经问过哪些维度,有意识地让问题覆盖面铺开;等上面这些维度大多覆盖到了,再挑候选人答得最好或最薄弱的点做适度深入。
+                2. 以本场计划指定的模块为准,不要自行把整场面试拉回某一个熟悉方向。
+                3. 对同一个知识点最多追问一次,然后切换到计划中的下一个模块。
+                4. 当前回合的问题必须围绕系统提供的目标模块,不要被候选人的某个细节带偏。
+                5. 点评要简短、具体,不要用固定套话,也不要每次都使用完全相同的句式。
                 6. 语气专业、简洁,像真实面试官一样自然对话,不要用"好的,我们开始吧"这类机械化开场白,也不要每句话都用 Markdown 列表排版。
                 7. 每次回复可以先简短点评候选人的回答,但最后必须使用下面的固定格式提出下一题:
 
@@ -756,6 +802,22 @@ public class InterviewServiceImpl implements InterviewService {
                 这里写一个完整、脱离上下文也能理解的问题
 
                 8. "【下一题】"后只能出现一道题,题目必须独立完整。不要使用"这里""刚才这个方案""那为什么"等依赖上文的指代。
-                """.formatted(direction.getLabel(), direction.getFocus());
+                """.formatted(plan.title(), plan.focus());
+    }
+
+    private String buildNextQuestionInstruction(InterviewPlanItem item) {
+        return """
+                下一题由后端面试计划控制,请不要自行切换主题。
+                目标模块: %s
+                本轮考察能力: %s
+                问题类型: %s
+                难度: %d/3
+                请在点评本轮回答后,严格使用下面这道题作为【下一题】,不要改写、追加第二道题或继续追问:
+
+                【下一题】
+                %s
+                """.formatted(
+                item.moduleName(), item.skill(), item.questionType(), item.difficulty(), item.questionText()
+        );
     }
 }

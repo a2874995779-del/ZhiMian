@@ -20,6 +20,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDateTime;
+
 @ExtendWith(MockitoExtension.class)
 class InterviewPersistenceServiceTest {
     @Mock
@@ -94,6 +96,30 @@ class InterviewPersistenceServiceTest {
 
         verify(turnService, never()).createWaitingTurn(any(), any(), any(Integer.class), any());
         verify(sessionMapper, never()).endSession(any(), any());
+    }
+
+    @Test
+    void expireInactiveSkipsWaitingTurnOnlyWhenSessionWasExpired() {
+        LocalDateTime cutoff = LocalDateTime.of(2026, 9, 8, 10, 0);
+        when(sessionMapper.expireInactiveSession(
+                11L, cutoff, InterviewExpirationService.FINISH_REASON
+        )).thenReturn(1);
+
+        assertThat(service.expireInactive(11L, cutoff)).isTrue();
+
+        verify(turnService).skipWaiting(11L);
+    }
+
+    @Test
+    void expireInactiveDoesNotSkipTurnWhenSessionBecameActiveAgain() {
+        LocalDateTime cutoff = LocalDateTime.of(2026, 9, 8, 10, 0);
+        when(sessionMapper.expireInactiveSession(
+                11L, cutoff, InterviewExpirationService.FINISH_REASON
+        )).thenReturn(0);
+
+        assertThat(service.expireInactive(11L, cutoff)).isFalse();
+
+        verify(turnService, never()).skipWaiting(11L);
     }
 
     private InterviewTurn turn(Long id, int roundNo) {

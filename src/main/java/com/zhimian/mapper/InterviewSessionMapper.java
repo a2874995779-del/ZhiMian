@@ -5,10 +5,20 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
+import java.time.LocalDateTime;
 
 @Mapper
 public interface InterviewSessionMapper {
     long countInProgress(@Param("userId") Long userId);
+
+    InterviewSession selectLatestInProgressByUserId(@Param("userId") Long userId);
+
+    List<Long> selectExpiredIdsByUserId(@Param("userId") Long userId,
+                                        @Param("cutoff") LocalDateTime cutoff,
+                                        @Param("limit") int limit);
+
+    List<Long> selectExpiredIds(@Param("cutoff") LocalDateTime cutoff,
+                                @Param("limit") int limit);
 
     void insert(InterviewSession session);
 
@@ -28,6 +38,10 @@ public interface InterviewSessionMapper {
     void markReportReady(@Param("id") Long id);
 
     int endSession(@Param("id") Long id, @Param("finishReason") String finishReason);
+
+    int expireInactiveSession(@Param("id") Long id,
+                              @Param("cutoff") LocalDateTime cutoff,
+                              @Param("finishReason") String finishReason);
 
     int incrementAnsweredCount(@Param("id") Long id);
 }

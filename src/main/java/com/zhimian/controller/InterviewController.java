@@ -38,6 +38,11 @@ public class InterviewController {
         return Result.success(interviewService.getSessionDetail(id));
     }
 
+    @GetMapping("/current")
+    public Result<InterviewSessionDetailVO> current(){
+        return Result.success(interviewService.getCurrentSession());
+    }
+
     @PostMapping("/{id}/finish")
     public Result<InterviewReportStatusVO> finish(@PathVariable Long id){
         return Result.success(interviewService.finishInterview(id));

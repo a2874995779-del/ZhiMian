@@ -4,19 +4,26 @@ import type {
   ChatStreamEvent,
   ChatDoneEvent,
   InterviewDirectionCode,
+  InterviewMode,
   InterviewReportStatusVO,
   InterviewSessionDetailVO,
   InterviewSessionListVO,
   InterviewSessionVO,
 } from '../types/interview'
 
-// 这两个接口会在后端同步触发 1~2 次大模型调用(生成开场白 / 生成评价报告),耗时远超 http.ts 的全局 10s 超时。
-// 若不单独放宽,axios 会在 10s 就 abort、前端弹"网络异常",而后端其实还在生成、会话锁还占着
-// (再点会显示"会话正在处理中",刷新后又发现报告已生成)。给它们一个足够长的超时,等真正的结果。
+// 结束面试会触发评价报告生成,耗时远超 http.ts 的全局 10s 超时。
+// 单独放宽超时时间,避免前端提前 abort 而后端仍在生成报告。
 const AI_CALL_TIMEOUT = 120000
 
-export function createInterview(direction: InterviewDirectionCode, targetQuestionCount = 8): Promise<InterviewSessionVO> {
-  return post<InterviewSessionVO>('/interviews', { direction, targetQuestionCount })
+export function createInterview(
+  selection: {
+    mode: InterviewMode
+    direction?: InterviewDirectionCode
+    scenarioCode?: string
+  },
+  targetQuestionCount = 8,
+): Promise<InterviewSessionVO> {
+  return post<InterviewSessionVO>('/interviews', { ...selection, targetQuestionCount })
 }
 
 // 结束面试:后端会加载整场对话让模型生成一份结构化评价报告并返回。
@@ -35,6 +42,11 @@ export function listInterviews(pageNum: number, pageSize: number): Promise<PageR
 
 export function getInterviewDetail(id: number): Promise<InterviewSessionDetailVO> {
   return get<InterviewSessionDetailVO>(`/interviews/${id}`)
+}
+
+// 服务端才知道当前账号真正未结束的会话；不能只依赖某个浏览器里的 localStorage。
+export function getCurrentInterview(): Promise<InterviewSessionDetailVO | null> {
+  return get<InterviewSessionDetailVO | null>('/interviews/current')
 }
 
 export interface ChatStreamHandlers {

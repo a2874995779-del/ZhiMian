@@ -28,7 +28,7 @@ async function submit() {
 </script>
 
 <template>
-  <el-dialog v-model="visible" title="登录智面" width="360px" align-center destroy-on-close>
+  <el-dialog v-model="visible" title="登录智面" width="min(360px, calc(100vw - 32px))" align-center destroy-on-close>
     <div class="login-form">
       <p class="zm-prompt hint">&gt; 需要一个已存在的账号(题库任务里用过的账号就行)</p>
       <el-input v-model="username" placeholder="账号" size="large" @keyup.enter="submit" />

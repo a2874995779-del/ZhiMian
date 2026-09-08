@@ -17,6 +17,8 @@ public interface InterviewService {
 
     InterviewSessionDetailVO getSessionDetail(Long id);
 
+    InterviewSessionDetailVO getCurrentSession();
+
     InterviewReportStatusVO finishInterview(Long id);
 
     InterviewReportStatusVO getReportStatus(Long id);

@@ -116,6 +116,7 @@ onMounted(loadDashboard)
   padding: 24px;
   display: flex;
   flex-direction: column;
+  min-height: 148px;
 }
 
 .cell--ring {
@@ -123,11 +124,13 @@ onMounted(loadDashboard)
   align-items: center;
   justify-content: center;
   gap: 14px;
+  min-height: 308px;
 }
 
 .cell--trend {
   grid-area: trend;
   gap: 10px;
+  min-height: 308px;
 }
 
 .cell--streak {
@@ -176,7 +179,7 @@ onMounted(loadDashboard)
   font-family: var(--zm-font-display);
   font-size: 32px;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -215,9 +218,9 @@ onMounted(loadDashboard)
   border: none;
   border-radius: var(--zm-radius-lg);
   cursor: pointer;
-  background: linear-gradient(135deg, var(--zm-accent) 0%, #4c9fec 100%);
+  background: var(--zm-accent);
   color: white;
-  box-shadow: var(--zm-shadow-glow-accent);
+  box-shadow: 0 10px 24px rgba(10, 132, 255, 0.2);
   transition: transform var(--zm-dur-base) var(--zm-ease), box-shadow var(--zm-dur-base) var(--zm-ease);
 }
 

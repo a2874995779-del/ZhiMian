@@ -29,7 +29,7 @@ docs/                         设计说明、学习资料、优化建议
 
 1. 创建 MySQL 数据库并执行 `sql/init.sql`。
 2. 按需执行 `sql/test-data.sql` 和 `sql/import-interview-qa.sql`。
-3. 如果是已有数据库，按功能完成时间执行 `sql/migrate-*.sql`。已经执行过面试回合升级的本地库，再执行一次 `sql/migrate-interview-turn-answered-time.sql`；全新数据库只需执行 `sql/init.sql`。
+3. 如果是已有数据库，按功能完成时间执行 `sql/migrate-*.sql`。已经执行过面试回合升级的本地库，再执行 `sql/migrate-interview-turn-answered-time.sql` 和 `sql/migrate-interview-plan.sql`；全新数据库只需执行 `sql/init.sql`。
 4. 在 `src/main/resources/application-local.yml` 中配置数据库密码、Redis 密码、AI Key 等本地敏感配置。
 5. 启动后端:
 

@@ -32,3 +32,8 @@ zhimian:
   jwt:
     # secret 在 application-local.yml 中配置,长度必须 >= 32 字节
     expire-hours: 24
+  interview:
+    # 进行中的面试超过该时长没有成功完成一轮回答，会自动结束且不生成报告
+    inactive-timeout-minutes: 120
+    # 后台过期扫描间隔；进入面试舱时还会按用户即时检查一次
+    expire-scan-interval-ms: 60000

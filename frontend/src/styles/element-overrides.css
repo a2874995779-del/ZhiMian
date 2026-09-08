@@ -3,19 +3,19 @@
   让组件库"长成"智面自己的设计系统,而不是套壳。
 */
 :root {
-  --el-color-primary: #0071e3;
-  --el-color-primary-light-3: #4c9fec;
-  --el-color-primary-light-5: #7fbcf3;
-  --el-color-primary-light-7: #b2d8f9;
-  --el-color-primary-light-9: #e6f2fd;
-  --el-color-primary-dark-2: #0058b3;
+  --el-color-primary: #0a84ff;
+  --el-color-primary-light-3: #54a5ff;
+  --el-color-primary-light-5: #8ac4ff;
+  --el-color-primary-light-7: #badcff;
+  --el-color-primary-light-9: #eaf5ff;
+  --el-color-primary-dark-2: #006ee6;
 
   --el-color-success: #34c759;
   --el-color-warning: #ff9f0a;
   --el-color-danger: #ff3b30;
   --el-color-error: #ff3b30;
 
-  --el-border-radius-base: 12px;
+  --el-border-radius-base: 10px;
   --el-border-radius-small: 8px;
   --el-border-radius-round: 999px;
 
@@ -30,13 +30,13 @@
   --el-border-color-light: var(--zm-border);
   --el-fill-color-blank: var(--zm-bg-elevated);
 
-  --el-transition-duration: 0.4s;
+  --el-transition-duration: 0.25s;
   --el-transition-function-ease-in-out-bezier: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .el-button {
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1), box-shadow 0.35s cubic-bezier(0.25, 1, 0.5, 1),
     background-color 0.35s cubic-bezier(0.25, 1, 0.5, 1);
 }
@@ -44,19 +44,60 @@
   transform: scale(0.96);
 }
 .el-button--primary {
-  box-shadow: 0 6px 20px rgba(0, 113, 227, 0.28);
+  box-shadow: 0 6px 16px rgba(10, 132, 255, 0.18);
+}
+
+.el-button--primary:hover,
+.el-button--primary:focus-visible {
+  box-shadow: 0 8px 20px rgba(10, 132, 255, 0.24);
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  box-shadow: 0 0 0 1px var(--zm-border) inset, var(--zm-shadow-sm);
+  background: var(--zm-bg-elevated);
+  transition: box-shadow 0.25s ease, background-color 0.25s ease;
+}
+
+.el-input__wrapper:hover,
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--zm-border-strong) inset, var(--zm-shadow-sm);
+}
+
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.2) inset, 0 0 0 1px var(--zm-accent) inset;
+}
+
+.el-table {
+  --el-table-border-color: var(--zm-border);
+  --el-table-header-bg-color: rgba(10, 132, 255, 0.04);
+  --el-table-row-hover-bg-color: rgba(10, 132, 255, 0.04);
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  color: var(--zm-ink);
+}
+
+.el-table th.el-table__cell {
+  color: var(--zm-ink-soft);
+  font-weight: 600;
+}
+
+.el-pagination.is-background .el-pager li:not(.is-disabled).is-active {
+  background-color: var(--zm-accent);
 }
 
 .el-drawer {
   background: var(--zm-bg-elevated);
+  box-shadow: -18px 0 48px rgba(18, 31, 53, 0.12);
 }
 .el-drawer__header {
   margin-bottom: 0;
 }
 .el-overlay {
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  background-color: rgba(0, 0, 0, 0.28);
+  background-color: rgba(17, 25, 39, 0.36);
 }
 
 .el-message-box {
@@ -78,4 +119,16 @@
 .el-card {
   --el-card-border-color: var(--zm-border);
   --el-card-bg-color: var(--zm-surface);
+  box-shadow: var(--zm-shadow-md);
+}
+
+.el-dialog {
+  border: 1px solid var(--zm-border);
+  border-radius: var(--zm-radius-lg);
+  box-shadow: var(--zm-shadow-lg);
+}
+
+.el-dialog__title {
+  color: var(--zm-ink);
+  font-weight: 700;
 }

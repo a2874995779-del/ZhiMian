@@ -1,9 +1,17 @@
 export type InterviewDirectionCode = 'java_concurrency' | 'jvm' | 'mysql' | 'redis' | 'system_design'
+export type InterviewMode = 'direction' | 'scenario'
 
 export interface DirectionOption {
   code: InterviewDirectionCode
   label: string
   focus: string
+}
+
+export interface ScenarioOption {
+  code: string
+  label: string
+  focus: string
+  modules: string[]
 }
 
 // 和后端 InterviewDirection 枚举一一对应
@@ -15,9 +23,27 @@ export const DIRECTION_OPTIONS: DirectionOption[] = [
   { code: 'system_design', label: '系统设计', focus: '高并发架构、限流降级、一致性权衡' },
 ]
 
+export const SCENARIO_OPTIONS: ScenarioOption[] = [
+  {
+    code: 'meituan_style_backend',
+    label: '美团风格后端面试（模拟）',
+    focus: '交易、配送、流量治理、稳定性与系统设计',
+    modules: ['项目深挖', 'Java 基础', 'MySQL', 'Redis', '交易流程', '高并发', '故障排查'],
+  },
+  {
+    code: 'tencent_style_backend',
+    label: '腾讯风格后端面试（模拟）',
+    focus: '基础能力、项目深挖、高并发与架构权衡',
+    modules: ['项目深挖', 'Java 基础', 'MySQL', 'Redis', '消息可靠性', '高并发', '综合权衡'],
+  },
+]
+
 export interface InterviewSessionVO {
   id: number
-  direction: InterviewDirectionCode
+  direction: InterviewDirectionCode | 'scenario'
+  mode: InterviewMode
+  scenarioCode: string | null
+  title: string
   openingMessage: string
   targetQuestionCount: number
   answeredQuestionCount: number
@@ -50,6 +76,7 @@ export interface ChatTurn {
 
 // 会话状态,和后端 interview_session.status 一一对应
 export type InterviewStatus = 0 | 1 | 2
+export type InterviewFinishReason = 'AUTO_LIMIT' | 'USER_STOP' | 'SYSTEM_ERROR' | 'INACTIVITY_TIMEOUT' | null
 
 export const STATUS_META: Record<InterviewStatus, { label: string; tone: 'active' | 'done' | 'graded' }> = {
   0: { label: '进行中', tone: 'active' },
@@ -59,7 +86,9 @@ export const STATUS_META: Record<InterviewStatus, { label: string; tone: 'active
 
 // list/detail 接口返回的 direction 是 code(java_concurrency…),展示时要转成中文名
 export function directionLabel(code: string): string {
-  return DIRECTION_OPTIONS.find((o) => o.code === code)?.label ?? code
+  return DIRECTION_OPTIONS.find((o) => o.code === code)?.label
+    ?? SCENARIO_OPTIONS.find((o) => o.code === code)?.label
+    ?? (code === 'scenario' ? '综合场景面试' : code)
 }
 
 // POST /interviews/{id}/finish 返回的结构化评价报告
@@ -83,11 +112,13 @@ export interface InterviewReportStatusVO {
 export interface InterviewSessionListVO {
   id: number
   direction: string
+  mode: InterviewMode
+  scenarioCode: string | null
   title: string
   status: InterviewStatus
   targetQuestionCount: number
   answeredQuestionCount: number
-  finishReason: 'AUTO_LIMIT' | 'USER_STOP' | 'SYSTEM_ERROR' | null
+  finishReason: InterviewFinishReason
   createTime: string
   endTime: string | null
 }
@@ -103,11 +134,13 @@ export interface InterviewMessageVO {
 export interface InterviewSessionDetailVO {
   id: number
   direction: string
+  mode: InterviewMode
+  scenarioCode: string | null
   title: string
   status: InterviewStatus
   targetQuestionCount: number
   answeredQuestionCount: number
-  finishReason: 'AUTO_LIMIT' | 'USER_STOP' | 'SYSTEM_ERROR' | null
+  finishReason: InterviewFinishReason
   createTime: string
   endTime: string | null
   messages: InterviewMessageVO[]

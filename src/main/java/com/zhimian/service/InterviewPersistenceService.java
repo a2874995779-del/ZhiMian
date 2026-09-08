@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+
 @Service
 @RequiredArgsConstructor
 public class InterviewPersistenceService {
@@ -78,6 +80,18 @@ public class InterviewPersistenceService {
     public void finishByUser(Long sessionId) {
         turnService.skipWaiting(sessionId);
         sessionMapper.endSession(sessionId, "USER_STOP");
+    }
+
+    @Transactional
+    public boolean expireInactive(Long sessionId, LocalDateTime cutoff) {
+        int expired = sessionMapper.expireInactiveSession(
+                sessionId, cutoff, InterviewExpirationService.FINISH_REASON
+        );
+        if (expired == 0) {
+            return false;
+        }
+        turnService.skipWaiting(sessionId);
+        return true;
     }
 
     private InterviewMessage buildMessage(Long sessionId, String role, String content) {

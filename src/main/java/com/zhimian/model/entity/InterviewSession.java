@@ -9,6 +9,9 @@ public class InterviewSession {
     private Long id;
     private Long userId;
     private String direction;
+    private String mode;
+    private String scenarioCode;
+    private String planJson;
     private String title;
     private Integer status;
     private Integer targetQuestionCount;

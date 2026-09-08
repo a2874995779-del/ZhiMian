@@ -118,18 +118,23 @@ CREATE TABLE `question_favorite` (
 CREATE TABLE `interview_session` (
   `id`          BIGINT       NOT NULL AUTO_INCREMENT,
   `user_id`     BIGINT       NOT NULL COMMENT '所属用户',
-  `direction`   VARCHAR(32)  NOT NULL COMMENT '面试方向:java_concurrency/jvm/mysql/redis/system_design',
+  `direction`   VARCHAR(32)  NOT NULL COMMENT '专项方向或scenario',
+  `mode`        VARCHAR(16)  NOT NULL DEFAULT 'direction' COMMENT 'direction-专项面试 scenario-综合场景面试',
+  `scenario_code` VARCHAR(64) DEFAULT NULL COMMENT '综合面试场景编码',
+  `plan_json`   JSON         DEFAULT NULL COMMENT '本场面试生成的题目计划快照',
   `title`       VARCHAR(128) DEFAULT NULL COMMENT '会话标题(默认取方向+日期)',
   `status`      TINYINT      NOT NULL DEFAULT 0 COMMENT '0-进行中 1-已结束 2-报告已生成',
   `target_question_count` INT NOT NULL DEFAULT 8 COMMENT '本场面试目标题数',
   `answered_question_count` INT NOT NULL DEFAULT 0 COMMENT '已经提交回答的题数',
-  `finish_reason` VARCHAR(32) DEFAULT NULL COMMENT 'AUTO_LIMIT/USER_STOP/SYSTEM_ERROR',
+  `finish_reason` VARCHAR(32) DEFAULT NULL COMMENT 'AUTO_LIMIT/USER_STOP/SYSTEM_ERROR/INACTIVITY_TIMEOUT',
   `end_time`    DATETIME     DEFAULT NULL COMMENT '结束时间',
   `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `is_deleted`  TINYINT      NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`),
-  KEY `idx_user_id` (`user_id`, `create_time`)
+  KEY `idx_user_id` (`user_id`, `create_time`),
+  KEY `idx_user_status_update` (`user_id`, `status`, `update_time`),
+  KEY `idx_status_update` (`status`, `update_time`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT 'AI 面试会话表';
 
 -- 面试消息表(system/user/assistant 全量历史,Redis 上下文丢失时靠它重建)

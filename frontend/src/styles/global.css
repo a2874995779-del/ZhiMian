@@ -15,6 +15,8 @@ body {
   background: var(--zm-bg);
   color: var(--zm-ink);
   font-family: var(--zm-font-body);
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   transition: background var(--zm-dur-base) var(--zm-ease), color var(--zm-dur-base) var(--zm-ease);
 }
@@ -25,7 +27,7 @@ h3,
 h4 {
   font-family: var(--zm-font-display);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   margin: 0;
 }
 
@@ -42,11 +44,9 @@ a {
   background: var(--zm-accent-glow);
 }
 
-/* ---- 玻璃拟态基础卡片 ---- */
+/* ---- Shared surface ---- */
 .zm-glass {
   background: var(--zm-surface);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
   border: 1px solid var(--zm-border);
   border-radius: var(--zm-radius-lg);
   box-shadow: var(--zm-shadow-md);
@@ -55,7 +55,7 @@ a {
 }
 
 .zm-glass--hoverable:hover {
-  transform: translateY(-3px);
+  transform: translateY(-2px);
   box-shadow: var(--zm-shadow-lg);
   border-color: var(--zm-border-strong);
 }
@@ -93,7 +93,7 @@ a {
   gap: 4px;
   font-family: var(--zm-font-mono);
   font-size: 12px;
-  padding: 3px 9px;
+  padding: 3px 8px;
   border-radius: var(--zm-radius-pill);
   border: 1px solid var(--zm-border-strong);
   color: var(--zm-ink-soft);
@@ -119,7 +119,7 @@ a {
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--zm-border-strong);
+  background: rgba(23, 32, 51, 0.2);
   border-radius: var(--zm-radius-pill);
 }
 ::-webkit-scrollbar-track {

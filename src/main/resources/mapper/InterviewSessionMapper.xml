@@ -4,11 +4,11 @@
 <mapper namespace="com.zhimian.mapper.InterviewSessionMapper">
     <insert id="insert" keyProperty="id" useGeneratedKeys="true">
         INSERT INTO interview_session (
-            user_id, direction, title, status, target_question_count,
+            user_id, direction, mode, scenario_code, plan_json, title, status, target_question_count,
             answered_question_count, finish_reason
         )
         VALUES (
-            #{userId}, #{direction}, #{title}, #{status}, #{targetQuestionCount},
+            #{userId}, #{direction}, #{mode}, #{scenarioCode}, #{planJson}, #{title}, #{status}, #{targetQuestionCount},
             #{answeredQuestionCount}, #{finishReason}
         )
     </insert>
@@ -18,10 +18,43 @@
         FROM interview_session
         WHERE user_id =#{userId} AND status = 0 AND is_deleted = 0
     </select>
+
+    <select id="selectLatestInProgressByUserId" resultType="com.zhimian.model.entity.InterviewSession">
+        SELECT
+            id,user_id,direction,mode,scenario_code,plan_json,title,status,target_question_count,answered_question_count,
+            finish_reason,end_time,create_time,update_time,is_deleted
+        FROM interview_session
+        WHERE user_id = #{userId}
+          AND status = 0
+          AND is_deleted = 0
+        ORDER BY update_time DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectExpiredIdsByUserId" resultType="long">
+        SELECT id
+        FROM interview_session
+        WHERE user_id = #{userId}
+          AND status = 0
+          AND is_deleted = 0
+          AND update_time &lt; #{cutoff}
+        ORDER BY update_time ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectExpiredIds" resultType="long">
+        SELECT id
+        FROM interview_session
+        WHERE status = 0
+          AND is_deleted = 0
+          AND update_time &lt; #{cutoff}
+        ORDER BY update_time ASC
+        LIMIT #{limit}
+    </select>
     
     <select id="selectById" resultType="com.zhimian.model.entity.InterviewSession">
         SELECT
-            id,user_id,direction,title,status,target_question_count,answered_question_count,
+            id,user_id,direction,mode,scenario_code,plan_json,title,status,target_question_count,answered_question_count,
             finish_reason,end_time,create_time,update_time,is_deleted
         FROM interview_session
         WHERE id =#{id} AND is_deleted = 0
@@ -35,7 +68,7 @@
     
     <select id="selectPageByUserId" resultType="com.zhimian.model.entity.InterviewSession">
         SELECT
-            id,user_id,direction,title,status,target_question_count,answered_question_count,
+            id,user_id,direction,mode,scenario_code,plan_json,title,status,target_question_count,answered_question_count,
             finish_reason,end_time,create_time,update_time,is_deleted
         FROM interview_session
         WHERE user_id = #{userId} AND is_deleted = 0
@@ -63,6 +96,17 @@
         WHERE id=#{id}
         AND is_deleted = 0
         AND status = 0
+    </update>
+
+    <update id="expireInactiveSession">
+        UPDATE interview_session
+        SET status = 1,
+            finish_reason = #{finishReason},
+            end_time = NOW()
+        WHERE id = #{id}
+          AND is_deleted = 0
+          AND status = 0
+          AND update_time &lt; #{cutoff}
     </update>
 
     <update id="incrementAnsweredCount">

@@ -4,7 +4,7 @@ USE zhimian;
 ALTER TABLE interview_session
   ADD COLUMN target_question_count INT NOT NULL DEFAULT 8 COMMENT '本场面试目标题数' AFTER status,
   ADD COLUMN answered_question_count INT NOT NULL DEFAULT 0 COMMENT '已经提交回答的题数' AFTER target_question_count,
-  ADD COLUMN finish_reason VARCHAR(32) DEFAULT NULL COMMENT 'AUTO_LIMIT/USER_STOP/SYSTEM_ERROR' AFTER answered_question_count;
+  ADD COLUMN finish_reason VARCHAR(32) DEFAULT NULL COMMENT 'AUTO_LIMIT/USER_STOP/SYSTEM_ERROR/INACTIVITY_TIMEOUT' AFTER answered_question_count;
 
 -- 老会话没有 turn 数据，先按已经成功落库的 user 消息回填进度。
 UPDATE interview_session s

@@ -8,6 +8,8 @@ import java.time.LocalDateTime;
 public class InterviewSessionListVO {
     private Long id;
     private String direction;
+    private String mode;
+    private String scenarioCode;
     private String title;
     private Integer status;
     private Integer targetQuestionCount;

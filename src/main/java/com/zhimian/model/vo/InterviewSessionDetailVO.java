@@ -10,6 +10,8 @@ import java.util.List;
 public class InterviewSessionDetailVO {
     private Long id;
     private String direction;
+    private String mode;
+    private String scenarioCode;
     private String title;
     private Integer status;
     private Integer targetQuestionCount;

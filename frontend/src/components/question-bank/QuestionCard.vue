@@ -58,19 +58,7 @@ const difficultyMeta = computed(() => {
 }
 
 .q-card-glow {
-  position: absolute;
-  top: -40%;
-  right: -30%;
-  width: 60%;
-  height: 180%;
-  background: radial-gradient(circle, var(--zm-accent-glow) 0%, transparent 70%);
-  opacity: 0;
-  transition: opacity var(--zm-dur-base) var(--zm-ease);
-  pointer-events: none;
-}
-
-.q-card:hover .q-card-glow {
-  opacity: 0.5;
+  display: none;
 }
 
 .q-card-top {
@@ -102,7 +90,7 @@ const difficultyMeta = computed(() => {
   font-size: 16px;
   line-height: 1.5;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   min-height: 2.4em;
 }
 
@@ -141,7 +129,7 @@ const difficultyMeta = computed(() => {
 .mastery-fill {
   height: 100%;
   border-radius: var(--zm-radius-pill);
-  background: linear-gradient(90deg, var(--zm-accent), var(--zm-gold));
+  background: var(--zm-accent);
   transition: width var(--zm-dur-slow) var(--zm-ease);
 }
 

@@ -65,6 +65,16 @@ function continueInterview(id: number) {
   router.push({ path: '/interview', query: { sessionId: id } })
 }
 
+function interviewLabel(item: Pick<InterviewSessionListVO, 'mode' | 'direction' | 'scenarioCode'>) {
+  return item.mode === 'scenario'
+    ? directionLabel(item.scenarioCode ?? 'scenario')
+    : directionLabel(item.direction)
+}
+
+function statusLabel(item: Pick<InterviewSessionListVO, 'status' | 'finishReason'>) {
+  return item.finishReason === 'INACTIVITY_TIMEOUT' ? '已过期' : STATUS_META[item.status].label
+}
+
 function stopReportPolling() {
   if (reportTimer !== null) {
     window.clearInterval(reportTimer)
@@ -107,7 +117,7 @@ async function openDetail(item: InterviewSessionListVO) {
   }
 }
 
-// 生成 / 读取本场评价。对未评价的会话(status 0/1)这一步会真正触发一次模型评价,并把状态推进到已评价。
+// 生成 / 读取本场评价。过期会话不会显示入口，后端也会拒绝补生成。
 async function loadReport(id: number) {
   reportLoading.value = true
   try {
@@ -151,13 +161,13 @@ async function loadReport(id: number) {
           @click="openDetail(item)"
         >
           <div class="record-main">
-            <span class="record-dir">{{ directionLabel(item.direction) }}</span>
+            <span class="record-dir">{{ interviewLabel(item) }}</span>
             <span class="record-title">{{ item.title }}</span>
           </div>
           <div class="record-side">
             <span class="record-progress">{{ item.answeredQuestionCount }}/{{ item.targetQuestionCount }} 题</span>
             <span class="zm-tag" :class="`zm-tag--${STATUS_META[item.status].tone}`">
-              {{ STATUS_META[item.status].label }}
+              {{ statusLabel(item) }}
             </span>
             <span class="record-time">{{ formatDateTime(item.createTime) }}</span>
           </div>
@@ -181,9 +191,9 @@ async function loadReport(id: number) {
     <el-drawer v-model="drawerVisible" size="560px" :with-header="false" destroy-on-close>
       <div v-if="detail" v-loading="detailLoading" class="drawer">
         <header class="drawer-head">
-          <span class="zm-tag zm-tag--active">{{ directionLabel(detail.direction) }}</span>
+          <span class="zm-tag zm-tag--active">{{ interviewLabel(detail) }}</span>
           <span class="zm-tag" :class="`zm-tag--${STATUS_META[detail.status].tone}`">
-            {{ STATUS_META[detail.status].label }}
+            {{ statusLabel(detail) }}
           </span>
           <span class="drawer-time">{{ formatDateTime(detail.createTime) }}</span>
           <el-button v-if="detail.status === 0" text type="primary" @click="continueInterview(detail.id)">
@@ -194,6 +204,9 @@ async function loadReport(id: number) {
         <!-- 报告区 -->
         <div v-if="drawerReport" class="drawer-report zm-glass">
           <ReportCard :report="drawerReport" />
+        </div>
+        <div v-else-if="detail.finishReason === 'INACTIVITY_TIMEOUT'" class="drawer-report-cta">
+          <span>该面试因长时间未操作已自动结束，不生成评价报告。</span>
         </div>
         <div v-else-if="detail.status !== 2" class="drawer-report-cta">
           <span>{{ reportMessage || (detail.status === 0 ? '这场面试还没结束' : '这场面试还没生成评价') }}</span>

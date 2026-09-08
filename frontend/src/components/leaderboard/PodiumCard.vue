@@ -95,7 +95,7 @@ const placeMeta = computed(() => {
   font-family: var(--zm-font-display);
   font-size: 26px;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--zm-ink);
 }
 

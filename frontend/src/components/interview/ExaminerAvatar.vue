@@ -1,18 +1,19 @@
 <script setup lang="ts">
 defineProps<{
   speaking: boolean
+  compact?: boolean
 }>()
 </script>
 
 <template>
-  <div class="examiner">
+  <div class="examiner" :class="{ 'examiner--compact': compact }">
     <!-- 呼吸式脉冲涟漪:模拟 AI 考官正在说话 -->
     <div class="ripples" :class="{ 'ripples--active': speaking }" aria-hidden="true">
       <span class="ripple" v-for="i in 3" :key="i" :style="{ animationDelay: (i - 1) * 0.7 + 's' }"></span>
     </div>
 
     <div class="face">
-      <span class="face-glyph zm-prompt">AI</span>
+      <img class="face-image" src="/ai-interviewer.png" alt="AI 面试官" />
     </div>
 
     <!-- 声波条 -->
@@ -70,16 +71,17 @@ defineProps<{
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--zm-accent) 0%, #123a63 100%);
-  box-shadow: var(--zm-shadow-glow-accent);
+  background: var(--zm-bg-elevated);
+  box-shadow: var(--zm-shadow-sm);
   position: relative;
   z-index: 1;
 }
 
-.face-glyph {
-  font-size: 34px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.92) !important;
+.face-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
 }
 
 .wavebar {
@@ -111,5 +113,26 @@ defineProps<{
   50% {
     height: 22px;
   }
+}
+
+.examiner--compact {
+  gap: 0;
+  padding: 0;
+}
+
+.examiner--compact .ripples {
+  top: 0;
+  width: 44px;
+  height: 44px;
+}
+
+.examiner--compact .face {
+  width: 44px;
+  height: 44px;
+  box-shadow: 0 5px 14px rgba(10, 132, 255, 0.16);
+}
+
+.examiner--compact .wavebar {
+  display: none;
 }
 </style>
