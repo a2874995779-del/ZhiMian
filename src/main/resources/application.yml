@@ -11,7 +11,9 @@ spring:
   data:
     redis:
       host: localhost
-      port: 6379
+      port: 6380
+      # Spring AI 1.0.0 RedisVectorStore 自动配置依赖 JedisConnectionFactory
+      client-type: jedis
       # password 如有,在 application-local.yml 中配置
 
 server:

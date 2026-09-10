@@ -1,0 +1,17 @@
+services:
+  rag-redis:
+    image: redis/redis-stack-server:latest
+    container_name: zhimian-rag-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - zhimian-rag-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  zhimian-rag-redis-data:
