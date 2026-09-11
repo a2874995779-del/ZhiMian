@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhimian.mapper.KnowledgeChunkMapper">
+    <sql id="chunkColumns">
+        id,
+        document_id,
+        chunk_index,
+        heading_path,
+        content,
+        content_hash,
+        token_count,
+        vector_status,
+        error_message,
+        create_time,
+        update_time,
+        is_deleted
+    </sql>
+
+    <insert id="batchInsert">
+        INSERT INTO knowledge_chunk(
+            document_id,
+            chunk_index,
+            heading_path,
+            content,
+            content_hash,
+            token_count,
+            vector_status
+        ) VALUES
+        <foreach collection="chunks" item="chunk" separator=",">
+            (
+            #{chunk.documentId},
+            #{chunk.chunkIndex},
+            #{chunk.headingPath},
+            #{chunk.content},
+            #{chunk.contentHash},
+            #{chunk.tokenCount},
+            #{chunk.vectorStatus}
+            )
+        </foreach>
+    </insert>
+
+    <select id="selectById" resultType="com.zhimian.model.entity.KnowledgeChunk">
+        SELECT <include refid="chunkColumns"/>
+        FROM knowledge_chunk
+        WHERE id =#{id}
+        AND is_deleted = 0
+    </select>
+
+    <select id="selectByDocumentId" resultType="com.zhimian.model.entity.KnowledgeChunk">
+        SELECT <include refid="chunkColumns"/>
+        FROM knowledge_chunk
+        WHERE document_id = #{documentId}
+        AND is_deleted = 0
+        ORDER BY chunk_index ASC
+    </select>
+
+    <update id="markIndexed">
+        UPDATE knowledge_chunk
+        SET vector_status = 1,
+        error_message = NULL,
+        update_time = NOW()
+        WHERE id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND vector_status = 0
+        AND is_deleted = 0
+    </update>
+
+    <update id="markFailed">
+        UPDATE knowledge_chunk
+        SET vector_status = 2,
+            error_message = #{errorMessage},
+            update_time = NOW()
+        WHERE id = #{id}
+          AND vector_status = 0
+          AND is_deleted = 0
+    </update>
+
+    <update id="softDeleteByDocumentId">
+        UPDATE knowledge_chunk
+        SET is_deleted = 1,
+            update_time = NOW()
+        WHERE document_id = #{documentId}
+          AND is_deleted = 0
+    </update>
+
+    <delete id="deleteByDocumentId">
+        DELETE FROM knowledge_chunk
+        WHERE document_id = #{documentId}
+    </delete>
+</mapper>

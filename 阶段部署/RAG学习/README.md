@@ -15,8 +15,9 @@
 1. [01-RAG核心概念与前置知识.md](./01-RAG核心概念与前置知识.md)
 2. [02-RAG在智面项目中的定位与学习路线.md](./02-RAG在智面项目中的定位与学习路线.md)
 3. [03-RAG向量检索最小闭环与阶段门禁.md](./03-RAG向量检索最小闭环与阶段门禁.md)
+4. [04-知识库表与数据模型.md](./04-知识库表与数据模型.md)
 
-前两篇建立认知，第三篇开始真正编写代码。
+前两篇建立认知，第三篇完成向量检索实验，第四篇开始建设可管理的知识库。
 
 你当前的实际起点是：
 
@@ -74,9 +75,9 @@ DeepSeek 根据片段生成讲解
 |---|---|---|---|---|
 | 01 | RAG 核心概念与前置知识 | RAG、Embedding、Chunk、向量、HNSW | 能讲清完整原理 | 已创建 |
 | 02 | RAG 在智面中的定位与学习路线 | 业务定位、用户体验、系统边界 | 确定实现顺序 | 已创建 |
-| 03 | 向量检索最小闭环 | Redis Stack、EmbeddingModel、VectorStore | 第一个真实语义检索测试 | 已创建，当前任务 |
-| 04 | 知识库表与数据模型 | 文档状态机、MySQL/向量库分工 | `knowledge_doc/chunk` 与 Mapper | 待创建 |
-| 05 | Markdown 清洗与智能切片 | 标题切分、token 切分、overlap | `MarkdownChunker` 与单元测试 | 待创建 |
+| 03 | 向量检索最小闭环 | Redis Stack、EmbeddingModel、VectorStore | 第一个真实语义检索测试 | 已完成 |
+| 04 | 知识库表与数据模型 | 文档状态机、MySQL/向量库分工 | `knowledge_document/chunk` 与 Mapper | 已完成 |
+| 05 | Markdown 清洗与智能切片 | 标题切分、token 切分、overlap | `MarkdownChunker` 与单元测试 | 下一任务，待创建 |
 | 06 | 异步导入与向量化 | 线程池、批处理、失败重试、补偿 | 文档上传和导入任务 | 待创建 |
 | 07 | 检索服务与效果评估 | TopK、阈值、去重、Hit@K、MRR | 检索 API 与评估集 | 待创建 |
 | 08 | 错题知识库讲解 | 增强 Prompt、引用、降级 | 第一条完整 RAG 业务链路 | 待创建 |
@@ -413,4 +414,3 @@ mvn -Dtest=VectorStoreIntegrationTest test
 - 不凭感觉调整十几个参数。
 
 先把最小语义检索闭环做对。后面的每一层都会建立在这条可靠的地基上。
-

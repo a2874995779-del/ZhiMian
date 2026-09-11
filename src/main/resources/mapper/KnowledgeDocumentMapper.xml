@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zhimian.mapper.KnowledgeDocumentMapper">
+
+    <sql id="documentColumns">
+        id,
+        title,
+        original_filename,
+        source_type,
+        content,
+        content_hash,
+        status,
+        chunk_count,
+        embedding_model,
+        vector_dimension,
+        error_message,
+        created_by,
+        create_time,
+        update_time,
+        is_deleted
+    </sql>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO knowledge_document(
+            title,
+            original_filename,
+            source_type,
+            content,
+            content_hash,
+            status,
+            chunk_count,
+            created_by
+        ) VALUES (#{title},
+                  #{originalFilename},
+                  #{sourceType},
+                  #{content},
+                  #{contentHash},
+                  #{status},
+                  #{chunkCount},
+                  #{createdBy})
+    </insert>
+
+    <select id="selectById" resultType="com.zhimian.model.entity.KnowledgeDocument">
+        SELECT <include refid="documentColumns"/>
+            FROM knowledge_document
+        WHERE id = #{id}
+        AND is_deleted = 0
+    </select>
+
+    <select id="selectActiveByContentHash"
+            resultType="com.zhimian.model.entity.KnowledgeDocument">
+        SELECT <include refid="documentColumns"/>
+        FROM knowledge_document
+        WHERE content_hash = #{contentHash}
+        AND is_deleted = 0
+        LIMIT 1
+    </select>
+
+    <update id="markProcessing">
+        UPDATE knowledge_document
+        SET status = 1,
+            embedding_model = #{embeddingModel},
+            vector_dimension = #{vectorDimension},
+            error_message = NULL,
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status IN (0, 3)
+          AND is_deleted = 0
+    </update>
+
+    <update id="markCompleted">
+        UPDATE knowledge_document
+        SET status = 2,
+            chunk_count = #{chunkCount},
+            error_message = NULL,
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status = 1
+          AND is_deleted = 0
+    </update>
+
+    <update id="markFailed">
+        UPDATE knowledge_document
+        SET status = 3,
+            error_message = #{errorMessage},
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status = 1
+          AND is_deleted = 0
+    </update>
+
+    <update id="markDeleting">
+        UPDATE knowledge_document
+        SET status = 4,
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status IN (0, 2, 3)
+          AND is_deleted = 0
+    </update>
+
+    <update id="softDelete">
+        UPDATE knowledge_document
+        SET is_deleted = 1,
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status = 4
+          AND is_deleted = 0
+    </update>
+</mapper>
