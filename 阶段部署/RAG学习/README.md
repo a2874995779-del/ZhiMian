@@ -16,8 +16,13 @@
 2. [02-RAG在智面项目中的定位与学习路线.md](./02-RAG在智面项目中的定位与学习路线.md)
 3. [03-RAG向量检索最小闭环与阶段门禁.md](./03-RAG向量检索最小闭环与阶段门禁.md)
 4. [04-知识库表与数据模型.md](./04-知识库表与数据模型.md)
+5. [05-Markdown清洗与智能切片.md](./05-Markdown清洗与智能切片.md)
 
-前两篇建立认知，第三篇完成向量检索实验，第四篇开始建设可管理的知识库。
+前两篇建立认知，第三篇完成向量检索实验，第四篇建立可管理的知识库，第五篇完成文档进入向量化前的清洗与切片。
+
+05 学习过程中如果对 Java 文本 API 不熟悉，先阅读补充专题：
+
+- [专题01-Java字符串、字符编码与文本处理.md](./专题01-Java字符串、字符编码与文本处理.md)
 
 你当前的实际起点是：
 
@@ -77,8 +82,8 @@ DeepSeek 根据片段生成讲解
 | 02 | RAG 在智面中的定位与学习路线 | 业务定位、用户体验、系统边界 | 确定实现顺序 | 已创建 |
 | 03 | 向量检索最小闭环 | Redis Stack、EmbeddingModel、VectorStore | 第一个真实语义检索测试 | 已完成 |
 | 04 | 知识库表与数据模型 | 文档状态机、MySQL/向量库分工 | `knowledge_document/chunk` 与 Mapper | 已完成 |
-| 05 | Markdown 清洗与智能切片 | 标题切分、token 切分、overlap | `MarkdownChunker` 与单元测试 | 下一任务，待创建 |
-| 06 | 异步导入与向量化 | 线程池、批处理、失败重试、补偿 | 文档上传和导入任务 | 待创建 |
+| 05 | Markdown 清洗与智能切片 | 标题切分、token 切分、overlap | `MarkdownChunker` 与单元测试 | 已完成 |
+| 06 | 异步导入与向量化 | 线程池、批处理、失败重试、补偿 | 文档上传和导入任务 | 下一任务，待创建 |
 | 07 | 检索服务与效果评估 | TopK、阈值、去重、Hit@K、MRR | 检索 API 与评估集 | 待创建 |
 | 08 | 错题知识库讲解 | 增强 Prompt、引用、降级 | 第一条完整 RAG 业务链路 | 待创建 |
 | 09 | RAG 前端交互 | 上传进度、来源展示、错误状态 | 管理端和用户端页面 | 待创建 |
@@ -392,25 +397,25 @@ mvn -Dtest=VectorStoreIntegrationTest test
 
 现在只做下面这些：
 
-- [ ] 阅读 `01-RAG核心概念与前置知识.md`。
-- [ ] 阅读 `02-RAG在智面项目中的定位与学习路线.md`。
-- [ ] 打开 `03-RAG向量检索最小闭环与阶段门禁.md`。
-- [ ] 在项目根目录创建 `docker-compose.rag.yml`。
-- [ ] 启动 `localhost:6380` 的 Redis Stack。
-- [ ] 验证 `PING`、`MODULE LIST` 和 `FT._LIST`。
-- [ ] 准备 Embedding API Key，但不要提交到 Git。
-- [ ] 调通 `EmbeddingModel`。
-- [ ] 完成 `VectorStoreIntegrationTest`。
-- [ ] 把代码和测试结果交给我 review。
+- [x] 完成 03 的 Embedding API 与 Redis Stack 最小闭环。
+- [x] 完成 04 的知识文档表、知识片段表、Mapper、状态机与测试。
+- [x] 阅读 `05-Markdown清洗与智能切片.md`。
+- [x] 理解标题路径、Token 窗口和 overlap。
+- [x] 完成 Cleaner、Parser、Splitter 和 Chunker。
+- [x] 完成四组不依赖外部服务的单元测试。
+- [x] 执行完整 `mvn test`，共 105 个测试通过，5 个外部集成测试按开关跳过。
+- [x] 完成 05 Code Review，并修复 Fence、异常类型和 Unicode Token 边界问题。
 
 当前阶段不要做：
 
 - 不写知识库前端；
 - 不支持 PDF/Word；
+- 不在 05 阶段写 MySQL 和 Redis；
+- 不调用 Embedding API；
 - 不改面试 Prompt；
 - 不做 rerank；
 - 不做多租户知识库；
 - 不追求复杂 Agent；
 - 不凭感觉调整十几个参数。
 
-先把最小语义检索闭环做对。后面的每一层都会建立在这条可靠的地基上。
+05 已通过验收。下一步进入 06 前，先理解“异步编排、状态迁移、MySQL 与 Redis 最终一致性”三件事。

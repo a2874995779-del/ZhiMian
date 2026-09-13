@@ -13,4 +13,8 @@ public class RagProperties {
     private int topK = 5;
     private double similarityThreshold = 0.70;
     private int embeddingDimensions = 1024;
+
+    private int chunkSizeTokens = 500;
+    private int chunkOverlapTokens = 80;
+    private int maxChunksPerDocument = 1000;
 }

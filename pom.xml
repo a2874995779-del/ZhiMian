@@ -22,6 +22,7 @@
         <mybatis.version>3.0.4</mybatis.version>
         <jjwt.version>0.12.6</jjwt.version>
         <spring-ai.version>1.0.0</spring-ai.version>
+        <jtokkit.version>1.1.0</jtokkit.version>
     </properties>
 
     <dependencies>
@@ -103,6 +104,12 @@
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-vector-store-redis</artifactId>
+        </dependency>
+        <!--JTokkit-->
+        <dependency>
+            <groupId>com.knuddels</groupId>
+            <artifactId>jtokkit</artifactId>
+            <version>${jtokkit.version}</version>
         </dependency>
     </dependencies>
 
