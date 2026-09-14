@@ -100,6 +100,16 @@ class KnowledgeMapperIntegrationTest {
                 .isEqualTo(KnowledgeChunkVectorStatus.FAILED.getCode());
         assertThat(updated.get(1).getErrorMessage()).isEqualTo("测试失败");
 
+        assertThat(chunkMapper.markAllFailedByDocumentId(
+                document.getId(), "批量向量化失败"
+        )).isEqualTo(2);
+        assertThat(chunkMapper.selectByDocumentId(document.getId()))
+                .allSatisfy(chunk -> {
+                    assertThat(chunk.getVectorStatus())
+                            .isEqualTo(KnowledgeChunkVectorStatus.FAILED.getCode());
+                    assertThat(chunk.getErrorMessage()).isEqualTo("批量向量化失败");
+                });
+
         assertThat(chunkMapper.softDeleteByDocumentId(document.getId())).isEqualTo(2);
         assertThat(chunkMapper.selectByDocumentId(document.getId())).isEmpty();
     }

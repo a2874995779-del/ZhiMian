@@ -90,4 +90,13 @@
         DELETE FROM knowledge_chunk
         WHERE document_id = #{documentId}
     </delete>
+
+    <update id="markAllFailedByDocumentId">
+        UPDATE knowledge_chunk
+        SET vector_status = 2,
+            error_message = #{errorMessage},
+            update_time = NOW()
+        WHERE document_id = #{documentId}
+          AND is_deleted = 0
+    </update>
 </mapper>

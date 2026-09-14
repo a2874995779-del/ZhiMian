@@ -720,6 +720,7 @@ src/main/java/com/zhimian/rag/support/MarkdownSectionParser.java
 ```java
 package com.zhimian.rag.support;
 
+import com.zhimian.rag.MarkdownSection;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -1222,6 +1223,10 @@ package com.zhimian.rag.support;
 
 import com.zhimian.config.RagProperties;
 import com.zhimian.model.dto.KnowledgeChunkDraft;
+import com.zhimian.rag.KnowledgeTextCleaner;
+import com.zhimian.rag.MarkdownSection;
+import com.zhimian.rag.MarkdownSectionParser;
+import com.zhimian.rag.TokenWindowSplitter;
 import com.zhimian.util.KnowledgeContentHasher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -1245,8 +1250,8 @@ public class MarkdownChunker {
     private final RagProperties ragProperties;
 
     public List<KnowledgeChunkDraft> chunk(String documentTitle,
-                                            String sourceType,
-                                            String content) {
+                                           String sourceType,
+                                           String content) {
         validateInput(documentTitle, sourceType, content);
         validateConfiguration();
 
@@ -1538,6 +1543,7 @@ src/test/java/com/zhimian/rag/support/KnowledgeTextCleanerTest.java
 ```java
 package com.zhimian.rag.support;
 
+import com.zhimian.rag.KnowledgeTextCleaner;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -1605,6 +1611,8 @@ src/test/java/com/zhimian/rag/support/MarkdownSectionParserTest.java
 ```java
 package com.zhimian.rag.support;
 
+import com.zhimian.rag.MarkdownSection;
+import com.zhimian.rag.MarkdownSectionParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -1706,6 +1714,7 @@ src/test/java/com/zhimian/rag/support/TokenWindowSplitterTest.java
 ```java
 package com.zhimian.rag.support;
 
+import com.zhimian.rag.TokenWindowSplitter;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -1779,6 +1788,10 @@ package com.zhimian.rag.support;
 
 import com.zhimian.config.RagProperties;
 import com.zhimian.model.dto.KnowledgeChunkDraft;
+import com.zhimian.rag.KnowledgeTextCleaner;
+import com.zhimian.rag.MarkdownChunker;
+import com.zhimian.rag.MarkdownSectionParser;
+import com.zhimian.rag.TokenWindowSplitter;
 import com.zhimian.util.KnowledgeContentHasher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -2425,3 +2438,5 @@ Hasher 只做稳定 Hash
 - 不提前编写 06 阶段代码。
 
 先把“同一份文档可以稳定地产生高质量 chunk”这件事做对。06 阶段才会把这条纯处理管道接入 MySQL、Embedding 和 Redis。
+
+完成本阶段并通过 Code Review 后，继续学习：[06-异步导入、向量化与最终一致性.md](./06-异步导入、向量化与最终一致性.md)。

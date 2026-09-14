@@ -43,3 +43,8 @@ zhimian:
     chunk-size-tokens: 500
     chunk-overlap-tokens: 80
     max-chunks-per-document: 1000
+    embedding-model: ${RAG_EMBEDDING_MODEL:BAAI/bge-m3}
+    vector-batch-size: 16
+    ingestion-core-pool-size: 1
+    ingestion-max-pool-size: 2
+    ingestion-queue-capacity: 20

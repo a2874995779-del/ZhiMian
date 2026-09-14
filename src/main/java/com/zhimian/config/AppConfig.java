@@ -51,4 +51,22 @@ public class AppConfig {
                 new ThreadPoolExecutor.AbortPolicy()
         );
     }
+
+    @Bean(name = "ragIngestionExecutor", destroyMethod = "shutdown")
+    public Executor ragIngestionExecutor(RagProperties properties) {
+        return new ThreadPoolExecutor(
+                properties.getIngestionCorePoolSize(),
+                properties.getIngestionMaxPoolSize(),
+                60,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(
+                        properties.getIngestionQueueCapacity()),
+                runnable -> {
+                    Thread thread = new Thread(runnable);
+                    thread.setName("rag-ingestion-" + thread.getId());
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+    }
 }

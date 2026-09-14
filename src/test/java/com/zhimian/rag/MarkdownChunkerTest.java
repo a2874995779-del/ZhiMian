@@ -1,7 +1,11 @@
-package com.zhimian.rag.support;
+package com.zhimian.rag;
 
 import com.zhimian.config.RagProperties;
 import com.zhimian.model.dto.KnowledgeChunkDraft;
+import com.zhimian.rag.support.MarkdownChunker;
+import com.zhimian.rag.support.MarkdownSectionParser;
+import com.zhimian.rag.support.KnowledgeTextCleaner;
+import com.zhimian.rag.support.TokenWindowSplitter;
 import com.zhimian.util.KnowledgeContentHasher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

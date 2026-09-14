@@ -1,5 +1,6 @@
-package com.zhimian.rag.support;
+package com.zhimian.rag;
 
+import com.zhimian.rag.support.TokenWindowSplitter;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

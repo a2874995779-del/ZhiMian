@@ -17,4 +17,10 @@ public class RagProperties {
     private int chunkSizeTokens = 500;
     private int chunkOverlapTokens = 80;
     private int maxChunksPerDocument = 1000;
+
+    private String embeddingModel = "BAAI/bge-m3";
+    private int vectorBatchSize = 16;
+    private int ingestionCorePoolSize = 1;
+    private int ingestionMaxPoolSize = 2;
+    private int ingestionQueueCapacity = 20;
 }

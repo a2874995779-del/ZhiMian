@@ -1,5 +1,6 @@
-package com.zhimian.rag.support;
+package com.zhimian.rag;
 
+import com.zhimian.rag.support.KnowledgeTextCleaner;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

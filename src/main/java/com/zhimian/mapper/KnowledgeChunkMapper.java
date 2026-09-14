@@ -23,4 +23,9 @@ public interface KnowledgeChunkMapper {
     int softDeleteByDocumentId(@Param("documentId") Long documentId);
 
     int deleteByDocumentId(@Param("documentId") Long documentId);
+
+    int markAllFailedByDocumentId(
+            @Param("documentId") Long documentId,
+            @Param("errorMessage") String errorMessage
+    );
 }

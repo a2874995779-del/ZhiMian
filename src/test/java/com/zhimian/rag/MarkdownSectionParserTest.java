@@ -1,5 +1,7 @@
-package com.zhimian.rag.support;
+package com.zhimian.rag;
 
+import com.zhimian.rag.support.MarkdownSection;
+import com.zhimian.rag.support.MarkdownSectionParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
