@@ -12,6 +12,7 @@ import {
 import { fetchQuestionDetail } from '../api/question'
 import QuestionCollectionCard from '../components/question-bank/QuestionCollectionCard.vue'
 import QuestionDetailDrawer from '../components/question-bank/QuestionDetailDrawer.vue'
+import WrongQuestionExplanationPanel from '../components/wrong-question/WrongQuestionExplanationPanel.vue'
 import type { QuestionCategory, QuestionDetail } from '../types/question'
 import type { WrongQuestionItem, WrongQuestionQuery } from '../types/wrong-question'
 
@@ -164,7 +165,14 @@ onMounted(async () => {
       :page-size="pageSize"
     />
 
-    <QuestionDetailDrawer v-model="drawerVisible" :question="activeQuestion" />
+    <QuestionDetailDrawer v-model="drawerVisible" :question="activeQuestion">
+      <template #after-answer>
+        <WrongQuestionExplanationPanel
+          v-if="activeQuestion"
+          :question-id="activeQuestion.id"
+        />
+      </template>
+    </QuestionDetailDrawer>
   </div>
 </template>
 

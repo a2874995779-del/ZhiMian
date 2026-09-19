@@ -1,6 +1,7 @@
 package com.zhimian.mapper;
 
 import com.zhimian.model.entity.KnowledgeChunk;
+import com.zhimian.rag.retrieval.KnowledgeSearchRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -28,4 +29,6 @@ public interface KnowledgeChunkMapper {
             @Param("documentId") Long documentId,
             @Param("errorMessage") String errorMessage
     );
+
+    List<KnowledgeSearchRow> selectSearchableByIds(@Param("ids") List<Long> ids);
 }

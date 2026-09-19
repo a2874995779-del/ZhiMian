@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Clock,
+  Files,
   Grid,
   Microphone,
   Management,
@@ -32,6 +33,7 @@ const navIcons: Record<string, any> = {
   wrong: Notebook,
   favorites: Star,
   review: Management,
+  knowledge: Files,
   user: User,
 }
 

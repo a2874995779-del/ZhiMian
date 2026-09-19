@@ -105,6 +105,8 @@ watch(
 
           <h4 class="zm-prompt" :class="{ 'analysis-answer-title': question.content }">&gt; 参考答案</h4>
           <p class="analysis-text analysis-text--answer">{{ question.answer }}</p>
+
+          <slot name="after-answer" />
         </section>
 
         <section v-if="question.codeSnippet" class="detail-code">

@@ -18,6 +18,8 @@
 4. [04-知识库表与数据模型.md](./04-知识库表与数据模型.md)
 5. [05-Markdown清洗与智能切片.md](./05-Markdown清洗与智能切片.md)
 6. [06-异步导入、向量化与最终一致性.md](./06-异步导入、向量化与最终一致性.md)
+7. [07-检索服务与效果评估.md](./07-检索服务与效果评估.md)
+8. [08-错题知识库讲解.md](./08-错题知识库讲解.md)
 
 前两篇建立认知，第三篇完成向量检索实验，第四篇建立可管理的知识库，第五篇完成文档进入向量化前的清洗与切片，第六篇把前面的能力连接成可恢复的异步导入链路。
 
@@ -84,9 +86,9 @@ DeepSeek 根据片段生成讲解
 | 03 | 向量检索最小闭环 | Redis Stack、EmbeddingModel、VectorStore | 第一个真实语义检索测试 | 已完成 |
 | 04 | 知识库表与数据模型 | 文档状态机、MySQL/向量库分工 | `knowledge_document/chunk` 与 Mapper | 已完成 |
 | 05 | Markdown 清洗与智能切片 | 标题切分、token 切分、overlap | `MarkdownChunker` 与单元测试 | 已完成 |
-| 06 | 异步导入与向量化 | 线程池、批处理、失败重试、补偿 | 文档上传和导入任务 | 已创建，当前任务 |
-| 07 | 检索服务与效果评估 | TopK、阈值、去重、Hit@K、MRR | 检索 API 与评估集 | 待创建 |
-| 08 | 错题知识库讲解 | 增强 Prompt、引用、降级 | 第一条完整 RAG 业务链路 | 待创建 |
+| 06 | 异步导入与向量化 | 线程池、批处理、失败重试、补偿 | 文档上传和导入任务 | 已完成 |
+| 07 | 检索服务与效果评估 | TopK、阈值、去重、Hit@K、MRR | 检索 API 与评估集 | 已完成 |
+| 08 | 错题知识库讲解 | 增强 Prompt、引用、降级 | 第一条完整 RAG 业务链路 | 已创建，当前任务 |
 | 09 | RAG 前端交互 | 上传进度、来源展示、错误状态 | 管理端和用户端页面 | 待创建 |
 | 10 | 面试追问与评价增强 | 查询改写、metadata filter、超时降级 | RAG 接入 AI 面试 | 待创建 |
 | 11 | 安全、监控与性能 | Prompt Injection、指标、缓存、成本 | 可观测和安全边界 | 待创建 |
@@ -396,28 +398,28 @@ mvn -Dtest=VectorStoreIntegrationTest test
 
 ## 十、当前行动清单
 
-03、04、05 已通过验收。现在进入 06，但只完成检查点 A：
+03 到 07 已通过验收。现在进入 08，但只完成检查点 A：
 
-- [ ] 阅读 06 的第三到七章，先理解同步、异步、幂等、补偿和最终一致性。
-- [ ] 画出 `Controller -> Service -> Launcher -> Worker` 的调用关系。
-- [ ] 在 `RagProperties` 增加批次和线程池参数。
-- [ ] 在 `application.yml` 增加对应公共配置。
-- [ ] 在 `AppConfig` 增加独立的 `ragIngestionExecutor`。
-- [ ] 启动项目，确认线程池 Bean 创建成功。
-- [ ] 执行现有全部测试，确认检查点 A 没有破坏前面的功能。
+- [ ] 阅读 08 的第二、三、四章，理解 Retrieval、Augmentation 和 Generation 的边界。
+- [ ] 画出 `Controller -> ExplanationService -> Retrieval/Assembler/Generator` 的调用关系。
+- [ ] 在 `WrongQuestionMapper` 增加当前用户错题归属查询。
+- [ ] 在 Mapper XML 同时限制 `userId` 和 `questionId`。
+- [ ] 为归属查询补测试。
+- [ ] 执行 `mvn -DskipTests compile`。
+- [ ] 提交检查点 A 的代码进行 review，再继续响应模型与上下文组装。
 
 当前阶段不要做：
 
-- 不写知识库前端；
-- 不支持 PDF/Word；
-- 不直接跳到 Controller；
-- 不先给 Worker 加异步；
-- 不把 Embedding 网络调用放进长事务；
-- 不从后台线程读取 `UserContext`；
-- 不改面试 Prompt；
+- 不写 RAG 前端；
+- 不修改面试 Prompt；
+- 不直接跳到 ChatClient；
+- 不让前端传 userId；
+- 不把外部知识放进 system Prompt；
+- 不相信模型生成的引用 ID；
+- 不把检索异常当成普通空结果；
 - 不做 rerank；
 - 不做多租户知识库；
 - 不追求复杂 Agent；
 - 不凭感觉调整十几个参数。
 
-当前从 [06-异步导入、向量化与最终一致性.md](./06-异步导入、向量化与最终一致性.md) 的检查点 A 开始。先理解和配置专用线程池，不要直接跳到 Controller。
+当前从 [08-错题知识库讲解.md](./08-错题知识库讲解.md) 的检查点 A 开始。先把权限数据边界写对，不要直接跳到 ChatClient。

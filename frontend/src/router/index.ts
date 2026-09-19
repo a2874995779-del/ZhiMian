@@ -59,6 +59,17 @@ const router = createRouter({
       },
     },
     {
+      path: '/admin/knowledge-base',
+      name: 'knowledge-base',
+      component: () => import('../views/KnowledgeBase.vue'),
+      meta: {
+        label: '知识库管理',
+        icon: 'knowledge',
+        requiresAuth: true,
+        requiresAdmin: true,
+      },
+    },
+    {
       path: '/profile',
       name: 'profile',
       component: () => import('../views/ComingSoon.vue'),

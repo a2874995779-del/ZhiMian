@@ -31,4 +31,8 @@ public interface WrongQuestionMapper {
 
     void recordCorrect(@Param("userId")Long userId,
                        @Param("questionId")long questionId);
+
+    boolean existsByUserAndQuestion(
+            @Param("userId") Long userId,
+            @Param("questionId")Long questionId);
 }

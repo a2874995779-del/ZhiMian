@@ -86,4 +86,15 @@
         WHERE user_id = #{userId}
         AND question_id =#{questionId}
     </delete>
+
+    <select id="existsByUserAndQuestion" resultType="boolean">
+       SELECT COUNT(*) >0
+       FROM wrong_question wq
+       INNER JOIN question q
+               ON q.id = wq.question_id
+               AND q.is_deleted = 0
+       WHERE wq.user_id = #{userId}
+       AND wq.question_id = #{questionId}
+    </select>
+
 </mapper>

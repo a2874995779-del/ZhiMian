@@ -6,6 +6,7 @@ import com.zhimian.model.entity.KnowledgeChunk;
 import com.zhimian.model.entity.KnowledgeDocument;
 import com.zhimian.model.enums.KnowledgeChunkVectorStatus;
 import com.zhimian.model.enums.KnowledgeDocumentStatus;
+import com.zhimian.rag.retrieval.KnowledgeSearchRow;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.mybatis.spring.annotation.MapperScan;
@@ -112,6 +113,65 @@ class KnowledgeMapperIntegrationTest {
 
         assertThat(chunkMapper.softDeleteByDocumentId(document.getId())).isEqualTo(2);
         assertThat(chunkMapper.selectByDocumentId(document.getId())).isEmpty();
+    }
+
+    @Test
+    void searchableChunkQueryUsesMysqlAsTheSourceOfTruth() {
+        KnowledgeDocument completed = newDocument();
+        assertThat(documentMapper.insert(completed)).isEqualTo(1);
+        assertThat(documentMapper.markProcessing(
+                completed.getId(), "BAAI/bge-m3", 1024)).isEqualTo(1);
+
+        KnowledgeChunk indexed = chunk(completed.getId(), 0, "有效知识片段");
+        KnowledgeChunk pending = chunk(completed.getId(), 1, "尚未向量化片段");
+        assertThat(chunkMapper.batchInsert(List.of(indexed, pending))).isEqualTo(2);
+        List<KnowledgeChunk> completedChunks =
+                chunkMapper.selectByDocumentId(completed.getId());
+        assertThat(chunkMapper.markIndexed(
+                List.of(completedChunks.get(0).getId()))).isEqualTo(1);
+        assertThat(documentMapper.markCompleted(completed.getId(), 2)).isEqualTo(1);
+
+        KnowledgeDocument unfinished = newDocument();
+        assertThat(documentMapper.insert(unfinished)).isEqualTo(1);
+        KnowledgeChunk unfinishedChunk =
+                chunk(unfinished.getId(), 0, "文档状态未完成");
+        assertThat(chunkMapper.batchInsert(List.of(unfinishedChunk))).isEqualTo(1);
+        Long unfinishedChunkId = chunkMapper
+                .selectByDocumentId(unfinished.getId()).get(0).getId();
+        assertThat(chunkMapper.markIndexed(
+                List.of(unfinishedChunkId))).isEqualTo(1);
+
+        KnowledgeDocument deleted = newDocument();
+        assertThat(documentMapper.insert(deleted)).isEqualTo(1);
+        assertThat(documentMapper.markProcessing(
+                deleted.getId(), "BAAI/bge-m3", 1024)).isEqualTo(1);
+        KnowledgeChunk deletedChunk =
+                chunk(deleted.getId(), 0, "已经删除的片段");
+        assertThat(chunkMapper.batchInsert(List.of(deletedChunk))).isEqualTo(1);
+        Long deletedChunkId = chunkMapper
+                .selectByDocumentId(deleted.getId()).get(0).getId();
+        assertThat(chunkMapper.markIndexed(List.of(deletedChunkId))).isEqualTo(1);
+        assertThat(documentMapper.markCompleted(deleted.getId(), 1)).isEqualTo(1);
+        assertThat(chunkMapper.softDeleteByDocumentId(deleted.getId())).isEqualTo(1);
+
+        List<KnowledgeSearchRow> result =
+                chunkMapper.selectSearchableByIds(List.of(
+                        completedChunks.get(0).getId(),
+                        completedChunks.get(1).getId(),
+                        unfinishedChunkId,
+                        deletedChunkId
+                ));
+
+        assertThat(result)
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(row.getChunkId())
+                            .isEqualTo(completedChunks.get(0).getId());
+                    assertThat(row.getDocumentId()).isEqualTo(completed.getId());
+                    assertThat(row.getDocumentTitle()).isEqualTo(completed.getTitle());
+                    assertThat(row.getSourceType()).isEqualTo("MARKDOWN");
+                    assertThat(row.getContent()).isEqualTo("有效知识片段");
+                });
     }
 
     private KnowledgeDocument newDocument() {

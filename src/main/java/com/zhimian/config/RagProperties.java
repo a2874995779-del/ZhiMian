@@ -23,4 +23,7 @@ public class RagProperties {
     private int ingestionCorePoolSize = 1;
     private int ingestionMaxPoolSize = 2;
     private int ingestionQueueCapacity = 20;
+
+    private int maxContextTokens = 3000;
+    private int maxCitations = 5;
 }

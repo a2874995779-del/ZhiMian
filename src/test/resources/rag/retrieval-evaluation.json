@@ -1,0 +1,37 @@
+[
+  {
+    "id": "thread-pool-order",
+    "query": "线程池收到新任务以后，是先进入队列还是先创建核心线程？",
+    "expectedHeadingContains": "1. Java 线程池的核心参数"
+  },
+  {
+    "id": "caller-runs-policy",
+    "query": "哪个拒绝策略会让提交任务的线程自己执行任务？",
+    "expectedHeadingContains": "1.1 常见拒绝策略"
+  },
+  {
+    "id": "cache-penetration",
+    "query": "不断查询数据库里根本不存在的数据属于什么缓存问题？",
+    "expectedHeadingContains": "2.1 缓存穿透"
+  },
+  {
+    "id": "cache-breakdown",
+    "query": "热点 key 失效瞬间大量请求一起访问数据库叫什么？",
+    "expectedHeadingContains": "2.2 缓存击穿"
+  },
+  {
+    "id": "redis-lua-atomicity",
+    "query": "为什么 Redis 中的一段 Lua 脚本适合完成库存扣减？",
+    "expectedHeadingContains": "3. 为什么 Lua 脚本可以保证 Redis 操作的原子性"
+  },
+  {
+    "id": "async-ingestion",
+    "query": "智面为什么不在上传接口里同步完成整篇文档向量化？",
+    "expectedHeadingContains": "4. 智面项目的异步知识导入流程"
+  },
+  {
+    "id": "galaxy-rule",
+    "query": "ZM-RAG-0914 的处理顺序、最大重试次数和完成标记是什么？",
+    "expectedHeadingContains": "5. 测试专用的“星河规则”"
+  }
+]

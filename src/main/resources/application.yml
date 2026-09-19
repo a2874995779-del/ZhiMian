@@ -48,3 +48,5 @@ zhimian:
     ingestion-core-pool-size: 1
     ingestion-max-pool-size: 2
     ingestion-queue-capacity: 20
+    max-context-tokens: 3000
+    max-citations: 5

@@ -99,4 +99,27 @@
         WHERE document_id = #{documentId}
           AND is_deleted = 0
     </update>
+
+    <select id="selectSearchableByIds" resultType="com.zhimian.rag.retrieval.KnowledgeSearchRow">
+        SELECT  c.id AS chunk_id,
+                c.document_id,
+                d.title AS document_title,
+                d.source_type,
+                c.chunk_index,
+                c.heading_path,
+                c.content,
+                c.content_hash,
+                c.token_count
+        FROM knowledge_chunk c
+                 INNER JOIN knowledge_document d
+                            ON d.id = c.document_id
+        WHERE c.id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND c.vector_status = 1
+        AND c.is_deleted = 0
+        AND d.status = 2
+        AND d.is_deleted = 0
+    </select>
 </mapper>
