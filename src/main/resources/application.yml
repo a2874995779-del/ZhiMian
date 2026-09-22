@@ -50,3 +50,4 @@ zhimian:
     ingestion-queue-capacity: 20
     max-context-tokens: 3000
     max-citations: 5
+    evaluation-timeout-seconds: 90

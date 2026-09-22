@@ -8,7 +8,10 @@ import org.springframework.util.StringUtils;
 import org.springframework.ai.document.Document;
 import java.util.HashMap;
 import java.util.Map;
-
+/*
+负责把数据库中的KnowledgeDocument，KnowledgeChunk
+转换为Spring AI的 org.springframework.ai.document.Document
+ */
 @Component
 public class KnowledgeVectorDocumentFactory {
     private static final String VECTOR_ID_PREFIX = "knowledge-chunk:";

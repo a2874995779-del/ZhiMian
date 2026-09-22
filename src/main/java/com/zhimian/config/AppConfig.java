@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -64,6 +65,23 @@ public class AppConfig {
                 runnable -> {
                     Thread thread = new Thread(runnable);
                     thread.setName("rag-ingestion-" + thread.getId());
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+    }
+
+    @Bean(name = "interviewEvaluationExecutor", destroyMethod = "shutdown")
+    public ExecutorService interviewEvaluationExecutor() {
+        return new ThreadPoolExecutor(
+                2,
+                4,
+                60,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(50),
+                runnable -> {
+                    Thread thread = new Thread(runnable);
+                    thread.setName("interview-evaluation-" + thread.getId());
                     return thread;
                 },
                 new ThreadPoolExecutor.AbortPolicy()

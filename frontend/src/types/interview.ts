@@ -1,4 +1,4 @@
-export type InterviewDirectionCode = 'java_concurrency' | 'jvm' | 'mysql' | 'redis' | 'system_design'
+export type InterviewDirectionCode = 'java_concurrency' | 'jvm' | 'mysql' | 'redis' | 'system_design' | 'rag'
 export type InterviewMode = 'direction' | 'scenario'
 
 export interface DirectionOption {
@@ -21,20 +21,27 @@ export const DIRECTION_OPTIONS: DirectionOption[] = [
   { code: 'mysql', label: 'MySQL', focus: '索引原理、事务隔离级别、锁机制' },
   { code: 'redis', label: 'Redis', focus: '数据结构、持久化、缓存三大问题、分布式锁' },
   { code: 'system_design', label: '系统设计', focus: '高并发架构、限流降级、一致性权衡' },
+  { code: 'rag', label: 'RAG 检索增强', focus: 'Embedding、向量检索、知识库导入、切片与 Prompt 增强' },
 ]
 
 export const SCENARIO_OPTIONS: ScenarioOption[] = [
   {
     code: 'meituan_style_backend',
-    label: '美团风格后端面试（模拟）',
-    focus: '交易、配送、流量治理、稳定性与系统设计',
-    modules: ['项目深挖', 'Java 基础', 'MySQL', 'Redis', '交易流程', '高并发', '故障排查'],
+    label: '美团风格后端实习面试（模拟）',
+    focus: '订单、库存、配送、流量治理、稳定性与系统设计',
+    modules: ['项目深挖', '订单状态机', '库存与优惠', '支付回调', '配送调度', '高峰流量', '故障排查'],
   },
   {
     code: 'tencent_style_backend',
-    label: '腾讯风格后端面试（模拟）',
-    focus: '基础能力、项目深挖、高并发与架构权衡',
-    modules: ['项目深挖', 'Java 基础', 'MySQL', 'Redis', '消息可靠性', '高并发', '综合权衡'],
+    label: '腾讯风格后端实习面试（模拟）',
+    focus: 'Java 基础、内容社交、高并发与架构权衡',
+    modules: ['项目深挖', 'JVM 与并发', 'Feed 流', '社交关系', '消息通知', '实时通信', '架构权衡'],
+  },
+  {
+    code: 'xiaohongshu_style_backend',
+    label: '小红书风格后端实习面试（模拟）',
+    focus: '内容发布、Feed 流、搜索、互动、审核与推荐基础',
+    modules: ['项目深挖', '内容发布', 'Feed 流', '搜索', '点赞评论', '内容审核', '热点治理'],
   },
 ]
 

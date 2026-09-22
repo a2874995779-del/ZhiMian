@@ -10,7 +10,9 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-
+/*
+文本处理阶段的总编排器,把前面切片的工具集成
+ */
 @Component
 @RequiredArgsConstructor
 public class MarkdownChunker {

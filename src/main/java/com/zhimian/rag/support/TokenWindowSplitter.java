@@ -9,7 +9,9 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
-
+/*
+负责把一段较长文本切成多个 Token 窗口。
+ */
 @Component
 public class TokenWindowSplitter {
     private final Encoding encoding = Encodings

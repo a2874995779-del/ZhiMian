@@ -9,6 +9,9 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/*
+它负责按照 Markdown 标题把文档划分成章节。
+ */
 @Component
 public class MarkdownSectionParser {
     private static final Pattern HEADING_PATTERN=

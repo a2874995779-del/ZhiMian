@@ -15,8 +15,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -86,8 +88,7 @@ public class InterviewPlanService {
         if (scenario == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "暂不支持该综合面试场景");
         }
-        List<InterviewPlanItem> items = new ArrayList<>(scenario.items);
-        shuffle(items);
+        List<InterviewPlanItem> items = selectScenarioItems(scenario, targetCount);
         return new InterviewPlan(
                 InterviewMode.SCENARIO.getCode(),
                 scenario.code,
@@ -95,6 +96,50 @@ public class InterviewPlanService {
                 scenario.focus,
                 renumber(items.subList(0, Math.min(targetCount, items.size())))
         );
+    }
+
+    /**
+     * 综合面试保留项目开场，后续从不同模块随机抽题，避免变成固定题单或连续问同一类问题。
+     */
+    private List<InterviewPlanItem> selectScenarioItems(
+            Scenario scenario,
+            int targetCount
+    ) {
+        List<InterviewPlanItem> candidates = new ArrayList<>(scenario.items);
+        InterviewPlanItem opening = candidates.stream()
+                .filter(item -> "project".equals(item.moduleCode()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("综合面试缺少项目开场题"));
+        candidates.remove(opening);
+        shuffle(candidates);
+
+        List<InterviewPlanItem> selected = new ArrayList<>();
+        Set<String> selectedModules = new HashSet<>();
+        selected.add(opening);
+        selectedModules.add(opening.moduleCode());
+
+        // 第一轮优先保证模块多样性，让 8 道题覆盖基础、业务、并发和故障等不同能力。
+        for (InterviewPlanItem candidate : candidates) {
+            if (selected.size() >= targetCount) {
+                break;
+            }
+            if (selectedModules.add(candidate.moduleCode())) {
+                selected.add(candidate);
+            }
+        }
+
+        // 题库扩展后如果出现同模块多题，再用剩余题目补足目标数量。
+        if (selected.size() < targetCount) {
+            for (InterviewPlanItem candidate : candidates) {
+                if (selected.size() >= targetCount) {
+                    break;
+                }
+                if (!selected.contains(candidate)) {
+                    selected.add(candidate);
+                }
+            }
+        }
+        return selected;
     }
 
     private List<InterviewPlanItem> directionItems(InterviewDirection direction) {
@@ -169,13 +214,46 @@ public class InterviewPlanService {
                     item("security", "安全设计", "鉴权与数据隔离", "工程实践", 2, "一个多用户系统如何保证接口鉴权、越权防护和数据隔离？"),
                     item("tradeoff", "架构权衡", "成本、复杂度与收益", "综合实践", 3, "请说明一次你在性能、成本、开发复杂度之间做取舍的设计。")
             );
+            case "rag" -> List.of(
+                    item("rag_basic", "RAG 基础", "RAG 与微调、普通问答的区别", "基础原理", 1, "RAG 解决什么问题？它和直接调用 ChatModel、模型微调有什么区别？"),
+                    item("embedding", "Embedding", "文本向量与语义相似度", "基础原理", 1, "Embedding 模型的输出是什么？为什么两个语义相近的问题可能得到相近的向量？"),
+                    item("chunk", "文档切片", "chunk 大小与 overlap", "工程实践", 2, "知识文档为什么要切成多个 chunk？chunk 太大、太小和没有 overlap 分别有什么问题？"),
+                    item("ingestion", "知识导入", "清洗、切片、向量化流程", "系统流程", 1, "请描述一篇 Markdown 从上传到进入向量库的完整流程，并说明每一步的职责。"),
+                    item("vector_store", "向量数据库", "向量索引与 metadata", "基础原理", 2, "VectorStore 保存哪些内容？metadata 为什么不能完全替代 MySQL 中的原始知识？"),
+                    item("retrieval", "语义检索", "TopK 与相似度阈值", "检索设计", 2, "TopK 和 similarity threshold 分别控制什么？阈值过高或过低会带来什么影响？"),
+                    item("hybrid", "检索优化", "向量检索与关键词检索", "架构权衡", 2, "只使用向量检索可能遇到什么问题？什么场景适合增加关键词检索或重排？"),
+                    item("prompt", "Prompt 增强", "参考资料与系统指令隔离", "安全设计", 2, "怎样把检索资料放进 Prompt，同时防止资料中的文字被模型误认为系统指令？"),
+                    item("citation", "引用溯源", "来源、章节与相似度", "工程实践", 1, "为什么 RAG 回答最好返回文档和章节引用？引用信息应该来自哪里？"),
+                    item("evaluation", "检索评估", "Hit@K、MRR 与生成质量", "测试评估", 2, "如何判断一个 RAG 检索效果好不好？为什么不能只凭最终回答是否通顺来判断？"),
+                    item("consistency", "数据一致性", "MySQL 与向量库最终一致", "可靠性", 2, "MySQL 保存原文、Redis 保存向量时，如何处理向量写入失败、重复导入和删除？"),
+                    item("fallback", "故障降级", "超时、重试与无知识库回答", "可靠性", 2, "Embedding 或 Redis 暂时不可用时，错题讲解和面试评价应该怎样降级？"),
+                    item("security", "RAG 安全", "Prompt Injection 与权限隔离", "安全设计", 2, "知识库资料和用户回答都可能包含恶意指令，系统应如何隔离、过滤和限制影响？"),
+                    item("context", "上下文管理", "Token 预算与资料筛选", "工程实践", 2, "检索到很多片段时，为什么不能全部放进 Prompt？你会怎样控制上下文长度？"),
+                    item("project", "项目实践", "RAG 模块设计与复盘", "综合实践", 2, "请结合智面项目，说明你负责的 RAG 模块、遇到的问题和一次具体的取舍。")
+            );
             default -> List.of(item("general", "项目实践", "技术方案表达", "综合实践", 1, "请介绍一个你最熟悉的技术点，并说明它在项目中的使用场景。"));
         };
     }
 
     private enum Scenario {
-        MEITUAN("meituan_style_backend", "美团风格后端面试（模拟）", "围绕交易、配送、流量和稳定性展开的后端综合面试", commonScenarioItems()),
-        TENCENT("tencent_style_backend", "腾讯风格后端面试（模拟）", "围绕基础能力、项目深挖和高并发系统设计展开的后端综合面试", commonScenarioItems());
+        MEITUAN(
+                "meituan_style_backend",
+                "美团风格后端实习面试（模拟）",
+                "围绕订单、库存、配送、流量治理和稳定性展开的实习生综合面试",
+                meituanScenarioItems()
+        ),
+        TENCENT(
+                "tencent_style_backend",
+                "腾讯风格后端实习面试（模拟）",
+                "围绕 Java 基础、内容社交、高并发和架构权衡展开的实习生综合面试",
+                tencentScenarioItems()
+        ),
+        XIAOHONGSHU(
+                "xiaohongshu_style_backend",
+                "小红书风格后端实习面试（模拟）",
+                "围绕内容发布、Feed 流、搜索、互动和推荐基础展开的实习生综合面试",
+                xiaohongshuScenarioItems()
+        );
 
         private final String code;
         private final String title;
@@ -198,27 +276,87 @@ public class InterviewPlanService {
             return null;
         }
 
-        private static List<InterviewPlanItem> commonScenarioItems() {
+        private static List<InterviewPlanItem> meituanScenarioItems() {
             return List.of(
-                    item("project", "项目深挖", "项目背景、个人职责和技术取舍", "项目介绍", 1, "请介绍一个你参与度较高的项目，并说明你本人负责的核心部分。"),
-                    item("java", "Java 基础", "集合、并发和异常处理", "基础原理", 2, "在你的项目中，哪些 Java 并发问题最容易出现？你会怎样保证代码安全？"),
-                    item("mysql", "MySQL", "索引、事务和慢查询", "工程实践", 2, "如果订单或业务记录表数据量快速增长，你会怎样设计索引和查询？"),
-                    item("redis", "Redis", "缓存、锁和一致性", "工程实践", 2, "如果一个热点数据同时被大量读取和更新，你会如何设计缓存一致性方案？"),
-                    item("trade", "交易流程", "下单、库存和状态机", "系统设计", 3, "请设计一个下单流程，说明库存扣减、订单状态和重复请求如何处理。"),
-                    item("message", "消息可靠性", "异步解耦与重复消费", "系统设计", 3, "订单状态变化需要通知多个下游系统，你会如何使用消息队列并保证可靠性？"),
-                    item("idempotency", "接口幂等", "回调重试与业务唯一键", "故障治理", 2, "支付回调可能重复到达时，你会如何设计幂等处理和异常补偿？"),
-                    item("high_concurrency", "高并发", "限流、热点和扩容", "系统设计", 3, "活动开始时流量瞬间增长十倍，你会如何保护入口、缓存、数据库和下游服务？"),
-                    item("fault", "故障排查", "延迟、错误率和线程池", "故障排查", 3, "线上接口 P99 延迟突然升高但错误率不高，你会按什么顺序排查？"),
-                    item("delivery", "复杂场景", "状态一致与超时重试", "场景设计", 3, "配送或异步任务长时间没有结果时，系统如何避免重复执行并支持补偿？"),
-                    item("security", "系统安全", "鉴权、越权与敏感数据", "工程实践", 2, "后端系统如何防止用户访问不属于自己的订单、面试记录或报告？"),
-                    item("tradeoff", "综合权衡", "可用性、成本与一致性", "开放讨论", 3, "请讲一次你在性能、稳定性、成本和开发复杂度之间做取舍的经历。")
+                    item("project", "项目深挖", "项目背景、个人职责和技术取舍", "项目介绍", 1, "请介绍一个你参与度较高的项目，并说明一次你亲自解决的线上或并发问题。", 2),
+                    item("requirement", "业务建模", "需求澄清与核心链路", "项目深挖", 1, "如果让你负责一个本地生活订单模块，你会先向产品和业务确认哪些关键问题？", 2),
+                    item("order_state", "订单状态机", "状态流转与非法操作", "系统设计", 2, "请设计外卖订单从待支付、已支付、商家接单到完成的状态机，如何防止状态乱跳？", 2),
+                    item("inventory", "库存扣减", "超卖、预扣与补偿", "高并发设计", 3, "高峰期多个用户同时抢最后一份库存，你会如何避免超卖，并处理支付失败后的库存释放？", 2),
+                    item("promotion", "优惠与定价", "价格快照与规则一致", "业务设计", 2, "优惠券、满减和配送费同时生效时，订单金额如何计算并保证支付金额可追溯？", 2),
+                    item("mysql_order", "订单数据库", "索引、分库与历史归档", "工程实践", 2, "订单表达到数亿行后，用户查最近订单和运营查商家订单分别应该如何设计索引？", 2),
+                    item("redis_hot", "热点缓存", "热点商品与缓存保护", "故障治理", 2, "热门商家和商品在午餐高峰被大量读取时，如何防止缓存击穿把数据库打垮？", 2),
+                    item("payment", "支付回调", "幂等、乱序与对账", "故障治理", 3, "支付成功回调重复或晚于订单取消回调到达时，你会如何设计状态校验和对账补偿？", 2),
+                    item("message", "消息可靠性", "本地消息表与重复消费", "系统设计", 3, "订单状态需要通知库存、配送和消息中心，你如何保证消息不丢、可重试且消费者幂等？", 2),
+                    item("delivery", "配送调度", "骑手匹配与任务状态", "场景设计", 3, "配送任务分配给骑手后长时间无人接单，如何设计超时重派并避免两个骑手同时执行？", 2),
+                    item("location", "位置服务", "实时位置与历史轨迹", "架构权衡", 2, "骑手位置需要实时展示，哪些数据放 Redis，哪些数据异步落 MySQL？如何控制写入压力？", 2),
+                    item("traffic", "高峰流量", "限流、排队与降级", "系统设计", 3, "节假日流量突然增长十倍，你会如何保护入口、订单服务、数据库和第三方支付？", 2),
+                    item("delay_close", "延迟任务", "超时取消与可靠执行", "工程实践", 2, "如何实现十五分钟未支付自动取消订单？定时任务重复执行或服务重启时怎么办？", 2),
+                    item("fault", "故障排查", "P99、线程池与下游", "故障排查", 3, "订单接口 P99 突然升高但错误率不高，你会按什么顺序判断是数据库、Redis、线程池还是下游变慢？", 2),
+                    item("observability", "稳定性建设", "指标、日志与链路追踪", "工程实践", 2, "你会为下单链路设计哪些核心指标，怎样区分用户慢、数据库慢和第三方支付慢？", 1),
+                    item("security", "业务安全", "越权、刷单与敏感数据", "工程实践", 2, "如何防止用户查看别人的订单、伪造价格或重复领取优惠券？", 2),
+                    item("consistency", "最终一致性", "跨服务状态补偿", "架构权衡", 3, "订单已支付但库存服务不可用时，系统如何保证最终一致，并让用户得到可解释的状态？", 2),
+                    item("tradeoff", "综合权衡", "可用性、成本与一致性", "开放讨论", 3, "在实时性、数据一致性、系统成本和开发复杂度冲突时，你会怎样做方案取舍？", 2)
+            );
+        }
+
+        private static List<InterviewPlanItem> tencentScenarioItems() {
+            return List.of(
+                    item("project", "项目深挖", "项目背景、核心难点和技术取舍", "项目介绍", 1, "请介绍一个你最熟悉的项目，重点说明架构演进、你的核心贡献以及一次失败复盘。", 2),
+                    item("java_depth", "Java 基础深挖", "集合、并发与对象模型", "原理追问", 2, "如果一个 Java 服务的共享 Map 在高并发下出现数据异常，你会从底层结构和并发访问两方面怎么分析？", 2),
+                    item("jvm_latency", "JVM 性能", "GC、线程与延迟", "故障排查", 3, "服务吞吐没有明显下降，但 P99 延迟周期性升高，你如何判断是 GC、线程阻塞还是下游抖动？", 2),
+                    item("concurrency", "并发模型", "线程池、异步和背压", "架构设计", 2, "一个内容处理接口既有 CPU 计算又有网络 IO，你会如何拆分线程池并防止任务无限堆积？", 2),
+                    item("feed", "Feed 流", "推模式、拉模式与热点", "系统设计", 3, "设计一个关注流，普通用户和拥有百万粉丝的大 V 分别适合推模式还是拉模式？为什么？", 2),
+                    item("social_graph", "社交关系", "关注、共同关系与存储", "数据建模", 2, "如何设计关注关系、共同关注和粉丝列表？Redis 与 MySQL 分别承担什么职责？", 2),
+                    item("like", "点赞互动", "幂等计数与高并发", "工程实践", 2, "点赞接口如何防止重复点赞？点赞数使用 Redis 聚合时，最终如何保证和明细数据一致？", 2),
+                    item("content_storage", "内容存储", "冷热分层与大字段", "架构权衡", 2, "内容正文、图片、评论和互动数据如何拆分存储？为什么不建议把所有字段放在一张大表？", 2),
+                    item("hot_content", "热点内容", "热点 Key 与读扩散", "高并发设计", 3, "一条热点内容在短时间被数百万用户访问，你会如何设计缓存、限流和热点失效保护？", 2),
+                    item("notification", "消息通知", "站内信、未读数与可靠性", "系统设计", 2, "点赞、评论和关注都需要通知用户，如何保证通知不重复，未读数又能快速查询？", 2),
+                    item("message_order", "消息顺序", "分区、顺序消费与重试", "消息设计", 3, "同一个用户的多条事件需要保持顺序，但不同用户可以并行消费，你会怎样设计消息分区？", 2),
+                    item("long_connection", "实时通信", "SSE、WebSocket 与连接治理", "架构对比", 2, "聊天或实时通知场景什么时候选择 SSE，什么时候选择 WebSocket？大量连接如何治理？", 2),
+                    item("search", "内容检索", "倒排索引与异步构建", "系统设计", 2, "发布内容后如何让用户尽快搜索到？索引构建失败或删除内容时如何补偿？", 2),
+                    item("distributed_id", "分布式 ID", "趋势有序与时钟问题", "基础设计", 2, "多节点生成内容和消息 ID 时，如何保证唯一性？如果需要趋势递增，还要考虑什么问题？", 2),
+                    item("sharding", "数据扩展", "分库分表与热点分片", "架构权衡", 3, "用户和内容数据持续增长时，如何选择分片键？热点用户或大 V 数据倾斜怎么解决？", 2),
+                    item("service_governance", "服务治理", "限流、熔断与隔离", "稳定性设计", 3, "推荐服务或消息服务故障时，主链路如何继续工作？如何避免故障扩散？", 2),
+                    item("consistency", "一致性权衡", "实时、最终一致与用户体验", "开放讨论", 2, "点赞数短时间不准确但明细正确，是否可以接受？你会如何向产品解释并设计修正机制？", 2),
+                    item("observability", "可观测性", "指标、日志与 Trace", "故障排查", 2, "线上某个接口只有部分用户变慢，你会如何结合用户、分片、机房和链路信息定位？", 2),
+                    item("security", "平台安全", "权限、风控与隐私", "工程实践", 2, "内容平台如何防止越权读取、恶意刷互动和敏感信息泄露？", 2),
+                    item("tradeoff", "综合权衡", "性能、成本与架构演进", "开放讨论", 3, "面对一个高并发系统，你如何判断应该继续优化单体，还是拆分服务和引入更多中间件？", 2)
+            );
+        }
+
+        private static List<InterviewPlanItem> xiaohongshuScenarioItems() {
+            return List.of(
+                    item("project", "项目深挖", "项目背景、个人贡献和技术取舍", "项目介绍", 1, "请介绍一个你参与度较高的项目，并重点说明你负责的功能、遇到的问题和最后的改进。", 2),
+                    item("content_publish", "内容发布", "草稿、发布和可见状态", "业务建模", 1, "设计一个笔记发布流程，草稿、发布、审核和删除分别应该有哪些状态？如何避免重复发布？", 2),
+                    item("content_storage", "内容存储", "正文、图片与扩展字段", "数据建模", 1, "笔记正文、图片地址、话题和可见范围如何存储？为什么图片文件不应该直接放进 MySQL？", 2),
+                    item("feed", "首页 Feed", "关注流与推荐流的基本实现", "系统设计", 2, "如果要实现一个简单首页 Feed，你会如何组织用户关注的内容，并处理分页和重复内容？", 2),
+                    item("feed_pagination", "Feed 分页", "游标分页与时间线稳定", "工程实践", 2, "Feed 数据不断新增时，为什么 offset 分页可能出现重复或漏数据？你会如何设计游标分页？", 2),
+                    item("recommend_cache", "推荐缓存", "热点内容与缓存保护", "高并发设计", 2, "一篇热门笔记突然被大量访问，你会缓存哪些数据？如何避免缓存失效时请求同时打到数据库？", 2),
+                    item("search", "内容搜索", "关键词、索引与异步更新", "系统设计", 2, "用户发布笔记后希望很快能搜索到，你会如何设计数据库写入和搜索索引更新？", 2),
+                    item("tag", "话题标签", "标签关系与热门排序", "数据建模", 1, "笔记可以关联多个话题，如何设计笔记和话题的关系？热门话题的数量如何统计？", 2),
+                    item("like", "点赞收藏", "幂等、计数与明细", "工程实践", 2, "点赞和收藏接口如何保证幂等？点赞数放缓存时，明细数据和计数如何保持最终一致？", 2),
+                    item("comment", "评论系统", "楼中楼与敏感内容处理", "业务设计", 2, "如何设计评论和回复的数据结构？评论内容需要审核时，发布链路如何让用户体验不被阻塞？", 2),
+                    item("notification", "互动通知", "未读数与消息可靠性", "系统设计", 2, "被点赞、评论或关注后需要通知用户，如何设计通知记录和未读数？重复事件怎么办？", 2),
+                    item("hot_key", "热点问题", "热点 Key 与读扩散", "故障治理", 2, "某个明星相关话题突然成为热点，怎样保护 Redis、数据库和搜索服务？", 2),
+                    item("image_service", "图片服务", "上传、压缩与 CDN", "架构权衡", 1, "图片上传后如何进行大小限制、压缩和 CDN 分发？后端接口如何避免被大文件拖垮？", 2),
+                    item("moderation", "内容审核", "同步审核与异步审核", "可靠性", 2, "笔记发布需要审核时，哪些内容可以同步判断，哪些适合异步审核？审核失败如何重试？", 2),
+                    item("rate_limit", "接口保护", "刷赞、刷评论与限流", "安全设计", 2, "如何防止用户短时间大量刷赞或刷评论？限流、幂等和风控分别解决什么问题？", 2),
+                    item("observability", "线上排查", "接口延迟与链路定位", "故障排查", 2, "首页 Feed 只有部分用户加载很慢，你会如何结合日志、指标和请求参数定位？", 2),
+                    item("consistency", "数据一致性", "删除、审核与索引同步", "架构权衡", 2, "用户删除笔记后，缓存、搜索索引和推荐结果可能短暂存在，你会如何处理最终一致？", 2),
+                    item("tradeoff", "综合权衡", "功能、性能与开发成本", "开放讨论", 2, "实习项目时间有限时，你会如何在先做可用版本、缓存优化和复杂推荐之间排序？", 2)
             );
         }
     }
 
     private static InterviewPlanItem item(String moduleCode, String moduleName, String skill,
                                            String questionType, int difficulty, String questionText) {
-        return new InterviewPlanItem(0, moduleCode, moduleName, skill, questionType, difficulty, questionText, 1);
+        return item(moduleCode, moduleName, skill, questionType, difficulty, questionText, 1);
+    }
+
+    private static InterviewPlanItem item(String moduleCode, String moduleName, String skill,
+                                           String questionType, int difficulty, String questionText,
+                                           int maxFollowUp) {
+        return new InterviewPlanItem(0, moduleCode, moduleName, skill, questionType, difficulty, questionText, maxFollowUp);
     }
 
     private List<InterviewPlanItem> renumber(List<InterviewPlanItem> items) {

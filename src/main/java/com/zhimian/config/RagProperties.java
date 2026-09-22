@@ -26,4 +26,7 @@ public class RagProperties {
 
     private int maxContextTokens = 3000;
     private int maxCitations = 5;
+
+    /** 单题 RAG 评价允许占用的最长时间，超时后沿用原有无评分降级。 */
+    private int evaluationTimeoutSeconds = 90;
 }

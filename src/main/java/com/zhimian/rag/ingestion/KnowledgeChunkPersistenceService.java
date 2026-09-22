@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-
+/*
+负责把 KnowledgeChunkDraft 保存到 MySQL
+ */
 @Service
 @RequiredArgsConstructor
 public class KnowledgeChunkPersistenceService {

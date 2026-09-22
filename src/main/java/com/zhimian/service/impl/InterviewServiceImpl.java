@@ -24,6 +24,8 @@ import com.zhimian.model.enums.InterviewMode;
 import com.zhimian.model.interview.InterviewPlan;
 import com.zhimian.model.interview.InterviewPlanItem;
 import com.zhimian.model.vo.*;
+import com.zhimian.rag.interview.InterviewAnswerEvaluationService;
+import com.zhimian.rag.interview.InterviewEvaluationResult;
 import com.zhimian.ratelimit.RateLimiter;
 import com.zhimian.redis.RedisLockManager;
 import com.zhimian.service.InterviewPersistenceService;
@@ -88,6 +90,7 @@ public class InterviewServiceImpl implements InterviewService {
     private final InterviewPersistenceService persistenceService;
     private final InterviewPlanService interviewPlanService;
     private final InterviewExpirationService interviewExpirationService;
+    private final InterviewAnswerEvaluationService answerEvaluationService;
     @Qualifier("reportExecutor")
     private final Executor reportExecutor;
 
@@ -634,9 +637,16 @@ public class InterviewServiceImpl implements InterviewService {
             InterviewAnswerEvaluation evaluation = null;
             String evaluationFailureReason = null;
             try {
-                evaluation = evaluateAnswerWithRetry(
-                        currentTurn.getQuestionText(), userContent
+                InterviewPlanItem currentItem = interviewPlanService.itemForRound(
+                        plan,
+                        currentTurn.getRoundNo()
                 );
+                InterviewEvaluationResult evaluationResult = answerEvaluationService.evaluate(
+                        currentTurn.getQuestionText(),
+                        userContent,
+                        currentItem
+                );
+                evaluation = evaluationResult.evaluation();
             } catch (Exception evaluationError) {
                 log.error("面试单题评分失败:sessionId={},round={}",
                         sessionId, currentTurn.getRoundNo(), evaluationError);
@@ -683,37 +693,6 @@ public class InterviewServiceImpl implements InterviewService {
         } finally {
             redisLockManager.unlock(lockKey, lockToken);
         }
-    }
-
-    private InterviewAnswerEvaluation evaluateAnswerWithRetry(String question, String answer) {
-        for (int attempt = 1; attempt <= 2; attempt++) {
-            try {
-                InterviewAnswerEvaluation evaluation = chatClient
-                        .prompt()
-                        .system(buildAnswerJudgePrompt())
-                        .user("问题：" + question + "\n\n候选人回答：" + answer)
-                        .call()
-                        .entity(InterviewAnswerEvaluation.class);
-                if (evaluation == null || evaluation.score() == null
-                        || !org.springframework.util.StringUtils.hasText(evaluation.evaluation())) {
-                    throw new IllegalStateException("单题评分字段不完整");
-                }
-                return evaluation;
-            } catch (Exception e) {
-                log.warn("面试单题评分第{}次尝试失败", attempt, e);
-            }
-        }
-        throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, "单题评分失败");
-    }
-
-    private String buildAnswerJudgePrompt() {
-        return """
-                你是一位严格但公平的 Java 技术面试评分员。
-                请只根据给定问题和候选人回答进行评分，不要因为表达风格或回答长短机械扣分。
-                score 为 0 到 100 的整数：60 分表示核心结论基本正确，80 分表示正确且有关键细节，
-                95 分以上表示准确、完整并包含原理或实践权衡。
-                evaluation 用一句到两句话说明得分依据，必须指出具体正确点或缺失点。
-                """;
     }
 
     private void evictContextQuietly(Long sessionId) {
