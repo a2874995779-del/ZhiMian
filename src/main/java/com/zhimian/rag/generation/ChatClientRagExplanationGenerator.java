@@ -1,20 +1,21 @@
 package com.zhimian.rag.generation;
 
 import com.zhimian.model.entity.Question;
+import com.zhimian.ai.AiChatClientFactory;
+import com.zhimian.common.UserContext;
 import lombok.RequiredArgsConstructor;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 @Component
 @RequiredArgsConstructor
 public class ChatClientRagExplanationGenerator implements RagExplanationGenerator{
-    private final ChatClient chatClient;
+    private final AiChatClientFactory aiChatClientFactory;
     private final RagExplanationPromptBuilder promptBuilder;
 
     @Override
     public RagExplanationOutput generate(Question question, String knowledgeContext) {
-        RagExplanationOutput output = chatClient
+        RagExplanationOutput output = aiChatClientFactory.forUser(UserContext.getUserId())
                 .prompt()
                 .system(promptBuilder.systemPrompt())
                 .user(promptBuilder.userPrompt(

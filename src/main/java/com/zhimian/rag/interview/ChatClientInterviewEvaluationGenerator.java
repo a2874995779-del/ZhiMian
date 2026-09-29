@@ -1,23 +1,23 @@
 package com.zhimian.rag.interview;
 
 import com.zhimian.rag.retrieval.InterviewRagEvidence;
+import com.zhimian.ai.AiChatClientFactory;
 import lombok.RequiredArgsConstructor;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
 public class ChatClientInterviewEvaluationGenerator implements InterviewEvaluationGenerator{
 
-    private final ChatClient chatClient;
+    private final AiChatClientFactory aiChatClientFactory;
     private final InterviewEvaluationPromptBuilder promptBuilder;
 
     @Override
-    public GroundedEvaluationOutput generate(String question, String answer, InterviewRagEvidence evidence) {
+    public GroundedEvaluationOutput generate(Long userId, String question, String answer, InterviewRagEvidence evidence) {
         if (evidence == null) {
             throw new IllegalArgumentException("面试评价证据不能为空");
         }
-        GroundedEvaluationOutput output = chatClient
+        GroundedEvaluationOutput output = aiChatClientFactory.forUser(userId)
                 .prompt()
                 .system(promptBuilder.systemPrompt())
                 .user(promptBuilder.userPrompt(question,answer,evidence))

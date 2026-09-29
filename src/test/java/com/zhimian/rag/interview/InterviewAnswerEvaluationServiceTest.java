@@ -13,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -62,10 +63,10 @@ class InterviewAnswerEvaluationServiceTest {
     @Test
     void convertsCoveredAndMissingPointsToLegacyEvaluation() {
         GroundedEvaluationOutput output = output();
-        when(generator.generate("问题", "回答", evidence)).thenReturn(output);
+        when(generator.generate(7L, "问题", "回答", evidence)).thenReturn(output);
 
         InterviewEvaluationResult result = service.evaluate(
-                "问题", "回答", item);
+                7L, "问题", "回答", item);
 
         assertThat(result.evaluation().score()).isEqualTo(82);
         assertThat(result.evaluation().evaluation())
@@ -78,23 +79,23 @@ class InterviewAnswerEvaluationServiceTest {
     @Test
     void retriesGeneratorWithoutRepeatingRetrieval() {
         GroundedEvaluationOutput output = output();
-        when(generator.generate("问题", "回答", evidence))
+        when(generator.generate(7L, "问题", "回答", evidence))
                 .thenThrow(new IllegalStateException("第一次失败"))
                 .thenReturn(output);
 
-        service.evaluate("问题", "回答", item);
+        service.evaluate(7L, "问题", "回答", item);
 
         verify(evidenceProvider, times(1)).load("问题", item);
         verify(generator, times(2)).generate(
-                eq("问题"), eq("回答"), same(evidence));
+                eq(7L), eq("问题"), eq("回答"), same(evidence));
     }
 
     @Test
     void throwsAiServiceErrorAfterBothAttemptsFail() {
-        when(generator.generate("问题", "回答", evidence))
+        when(generator.generate(7L, "问题", "回答", evidence))
                 .thenThrow(new IllegalStateException("模型失败"));
 
-        assertThatThrownBy(() -> service.evaluate("问题", "回答", item))
+        assertThatThrownBy(() -> service.evaluate(7L, "问题", "回答", item))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(exception -> {
                     BusinessException businessException =
@@ -103,23 +104,43 @@ class InterviewAnswerEvaluationServiceTest {
                             .isEqualTo(ErrorCode.AI_SERVICE_ERROR.getCode());
                 });
         verify(generator, times(2)).generate(
-                eq("问题"), eq("回答"), same(evidence));
+                eq(7L), eq("问题"), eq("回答"), same(evidence));
     }
 
     @Test
     void returnsTimeoutWhenEvaluationDoesNotFinish() throws Exception {
         CountDownLatch release = new CountDownLatch(1);
         properties.setEvaluationTimeoutSeconds(1);
-        when(generator.generate("问题", "回答", evidence))
+        when(generator.generate(7L, "问题", "回答", evidence))
                 .thenAnswer(invocation -> {
                     release.await(5, TimeUnit.SECONDS);
                     return output();
                 });
 
-        assertThatThrownBy(() -> service.evaluate("问题", "回答", item))
+        assertThatThrownBy(() -> service.evaluate(7L, "问题", "回答", item))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("单题评分超时");
         release.countDown();
+    }
+
+    @Test
+    void startsEvaluationWithoutBlockingTheInterviewStream() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(generator.generate(7L, "问题", "回答", evidence))
+                .thenAnswer(invocation -> {
+                    entered.countDown();
+                    release.await(2, TimeUnit.SECONDS);
+                    return output();
+                });
+
+        CompletableFuture<InterviewEvaluationResult> future =
+                service.evaluateAsync(7L, "问题", "回答", item);
+
+        assertThat(entered.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(future).isNotDone();
+        release.countDown();
+        assertThat(future.get(1, TimeUnit.SECONDS).evaluation().score()).isEqualTo(82);
     }
 
     private GroundedEvaluationOutput output() {

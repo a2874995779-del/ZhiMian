@@ -12,6 +12,7 @@ import {
   Reading,
   Star,
   Sunny,
+  Setting,
   SwitchButton,
   Trophy,
   User,
@@ -35,6 +36,7 @@ const navIcons: Record<string, any> = {
   review: Management,
   knowledge: Files,
   user: User,
+  settings: Setting,
 }
 
 const navItems = computed(() =>

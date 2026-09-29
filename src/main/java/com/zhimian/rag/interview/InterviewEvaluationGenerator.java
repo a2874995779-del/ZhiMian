@@ -4,6 +4,7 @@ import com.zhimian.rag.retrieval.InterviewRagEvidence;
 
 public interface InterviewEvaluationGenerator {
     GroundedEvaluationOutput generate(
+            Long userId,
             String question,
             String answer,
             InterviewRagEvidence evidence

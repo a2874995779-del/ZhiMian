@@ -72,8 +72,8 @@ const router = createRouter({
     {
       path: '/profile',
       name: 'profile',
-      component: () => import('../views/ComingSoon.vue'),
-      meta: { label: '成就中心', icon: 'user', requiresAuth: true },
+      component: () => import('../views/ModelSettings.vue'),
+      meta: { label: '模型设置', icon: 'settings', requiresAuth: true },
     },
   ],
 })

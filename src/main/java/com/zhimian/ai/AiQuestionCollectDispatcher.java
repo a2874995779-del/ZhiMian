@@ -21,14 +21,15 @@ public class AiQuestionCollectDispatcher {
         this.collectorService = collectorService;
     }
 
-    public void dispatch(Long sessionId,
+    public void dispatch(Long userId,
+                         Long sessionId,
                          Long assistantMessageId,
                          String direction,
                          String question) {
         try {
             questionCollectExecutor.execute(() -> {
                 try {
-                    collectorService.collect(sessionId, assistantMessageId, direction, question);
+                    collectorService.collect(userId, sessionId, assistantMessageId, direction, question);
                 } catch (Exception e) {
                     log.error("候选题收集任务执行失败:messageId={}", assistantMessageId, e);
                 }

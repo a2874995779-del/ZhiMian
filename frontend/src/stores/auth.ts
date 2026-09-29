@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { login as loginApi } from '../api/auth'
+import { login as loginApi, register as registerApi } from '../api/auth'
 import type { User } from '../types/user'
 
 const TOKEN_KEY = 'zm-token'
@@ -19,6 +19,11 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem(USER_KEY, JSON.stringify(result.user))
   }
 
+  async function register(username: string, password: string, nickname?: string) {
+    await registerApi(username, password, nickname)
+    await login(username, password)
+  }
+
   function logout() {
     token.value = null
     user.value = null
@@ -26,5 +31,5 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem(USER_KEY)
   }
 
-  return { token, user, login, logout }
+  return { token, user, login, register, logout }
 })

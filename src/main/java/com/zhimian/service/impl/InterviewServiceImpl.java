@@ -2,6 +2,7 @@ package com.zhimian.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhimian.ai.AiQuestionCollectDispatcher;
+import com.zhimian.ai.AiChatClientFactory;
 import com.zhimian.ai.InterviewContextManager;
 import com.zhimian.common.ErrorCode;
 import com.zhimian.common.PageResult;
@@ -58,6 +59,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -78,7 +80,7 @@ public class InterviewServiceImpl implements InterviewService {
     private final RateLimiter rateLimiter;
     private final InterviewMessageMapper  interviewMessageMapper;
     private final InterviewSessionMapper interviewSessionMapper;
-    private final ChatClient chatClient;
+    private final AiChatClientFactory aiChatClientFactory;
     private final InterviewContextManager contextManager;
     private final InterviewReportMapper interviewReportMapper;
     private final InterviewTurnMapper interviewTurnMapper;
@@ -132,6 +134,7 @@ public class InterviewServiceImpl implements InterviewService {
             );
             evictContextQuietly(session.getId());
             questionCollectDispatcher.dispatch(
+                    userId,
                     session.getId(),
                     created.assistantMessage().getId(),
                     session.getDirection(),
@@ -175,6 +178,7 @@ public class InterviewServiceImpl implements InterviewService {
         // 这一步只是同步的入口拦截,不涉及后面的异步回调,不存在跨线程读 ThreadLocal 的问题
 
         Long userId = UserContext.getUserId();
+        ChatClient userChatClient = aiChatClientFactory.forUser(userId);
         if(!rateLimiter.tryAcquire(RATE_PREFIX+userId,RATE_WINDOW_SECONDS)){
             throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS,"操作太频繁请稍后再试");
         }
@@ -207,6 +211,21 @@ public class InterviewServiceImpl implements InterviewService {
             }
             springAiMessages.add(new UserMessage(dto.getContent()));
 
+            InterviewPlanItem currentItem = interviewPlanService.itemForRound(
+                    plan, currentTurn.getRoundNo()
+            );
+            CompletableFuture<InterviewEvaluationResult> evaluationFuture;
+            try {
+                evaluationFuture = answerEvaluationService.evaluateAsync(
+                        userId, currentTurn.getQuestionText(), dto.getContent(), currentItem
+                );
+            } catch (RuntimeException evaluationError) {
+                log.warn("单题评分任务未能启动:sessionId={},round={}",
+                        sessionId, currentTurn.getRoundNo(), evaluationError);
+                evaluationFuture = CompletableFuture.failedFuture(evaluationError);
+            }
+            CompletableFuture<InterviewEvaluationResult> roundEvaluation = evaluationFuture;
+
             // 有限超时:模型流卡死(既不吐字也不报错)时,到点触发 onTimeout 自救(dispose+放锁),
             // 而不是干等到锁 TTL 过期后被别的请求开出第二条流
             SseEmitter emitter = new SseEmitter(TimeUnit.MINUTES.toMillis(5));
@@ -214,7 +233,7 @@ public class InterviewServiceImpl implements InterviewService {
             String userContent = dto.getContent();
             AtomicInteger streamState = new AtomicInteger(0); // 0=流式中 1=完成处理中 2=已取消
 
-            Disposable subscription = chatClient.prompt(new Prompt(springAiMessages))
+            Disposable subscription = userChatClient.prompt(new Prompt(springAiMessages))
                     .stream()
                     .content()
                     .doOnNext(fullReply::append)
@@ -222,6 +241,7 @@ public class InterviewServiceImpl implements InterviewService {
                             delta -> sendEvent(emitter, Map.of("type", "delta", "content", delta)),
                             error -> {
                                 if (streamState.compareAndSet(0, 2)) {
+                                    roundEvaluation.cancel(true);
                                     onStreamError(emitter, sessionId, lockKey, lockToken, error);
                                 }
                             },
@@ -229,6 +249,7 @@ public class InterviewServiceImpl implements InterviewService {
                                 if (streamState.compareAndSet(0, 1)) {
                                     onStreamComplete(
                                             emitter,
+                                            userId,
                                             sessionId,
                                             lockKey,
                                             lockToken,
@@ -237,6 +258,8 @@ public class InterviewServiceImpl implements InterviewService {
                                             session.getDirection(),
                                             currentTurn,
                                             plan,
+                                            roundEvaluation,
+                                            streamState,
                                             finalRound,
                                             targetCount
                                     );
@@ -248,15 +271,21 @@ public class InterviewServiceImpl implements InterviewService {
                 log.warn("SSE超时:sessionId={}",sessionId);
                 if (streamState.compareAndSet(0, 2)) {
                     subscription.dispose();
+                    roundEvaluation.cancel(true);
                     sendEvent(emitter, Map.of("type", "error", "message", "AI响应超时，请重试"));
                     emitter.complete();
                     redisLockManager.unlock(lockKey, lockToken);
+                } else if (streamState.compareAndSet(1, 2)) {
+                    // 保存阶段可能仍在运行；通知客户端结束等待，聊天锁由完成回调的 finally 释放。
+                    sendEvent(emitter, Map.of("type", "error", "message", "本轮处理超时，请刷新会话确认结果"));
+                    emitter.complete();
                 }
             });
             emitter.onError(throwable -> {
                 log.warn("SSE 连接异常:sessionId={}",sessionId,throwable);
                 if (streamState.compareAndSet(0, 2)) {
                     subscription.dispose();
+                    roundEvaluation.cancel(true);
                     redisLockManager.unlock(lockKey, lockToken);
                 }
             });
@@ -406,7 +435,11 @@ public class InterviewServiceImpl implements InterviewService {
             if (!org.springframework.util.StringUtils.hasText(transcript)) {
                 throw new IllegalStateException("没有可用于评分的完整问答");
             }
-            InterviewReportResult result = generateReportWithRetry(transcript);
+            InterviewSession session = interviewSessionMapper.selectById(sessionId);
+            if (session == null) {
+                throw new IllegalStateException("面试会话不存在");
+            }
+            InterviewReportResult result = generateReportWithRetry(session.getUserId(), transcript);
             boolean everyTurnScored = !turns.isEmpty()
                     && turns.stream().allMatch(turn -> turn.getScore() != null);
             Double averageScore = everyTurnScored
@@ -478,10 +511,10 @@ public class InterviewServiceImpl implements InterviewService {
         return buildReportStatus(report);
     }
 
-    private InterviewReportResult generateReportWithRetry(String transcript) {
+    private InterviewReportResult generateReportWithRetry(Long userId, String transcript) {
         for(int attempt = 1;attempt <=2;attempt++){
             try{
-                InterviewReportResult result = chatClient
+                InterviewReportResult result = aiChatClientFactory.forUser(userId)
                         .prompt()
                         .system(buildJudgePrompt())
                         .user(transcript)
@@ -609,6 +642,7 @@ public class InterviewServiceImpl implements InterviewService {
     }
 
     private void onStreamComplete(SseEmitter emitter,
+                                  Long userId,
                                   Long sessionId,
                                   String lockKey,
                                   String lockToken,
@@ -617,6 +651,8 @@ public class InterviewServiceImpl implements InterviewService {
                                   String direction,
                                   InterviewTurn currentTurn,
                                   InterviewPlan plan,
+                                  CompletableFuture<InterviewEvaluationResult> evaluationFuture,
+                                  AtomicInteger streamState,
                                   boolean finalRound,
                                   int targetCount) {
         try {
@@ -634,20 +670,14 @@ public class InterviewServiceImpl implements InterviewService {
                 sendEvent(emitter, Map.of("type", "delta", "content", suffix));
             }
 
+            sendEvent(emitter, Map.of("type", "processing"));
+
             InterviewAnswerEvaluation evaluation = null;
             String evaluationFailureReason = null;
             try {
-                InterviewPlanItem currentItem = interviewPlanService.itemForRound(
-                        plan,
-                        currentTurn.getRoundNo()
-                );
-                InterviewEvaluationResult evaluationResult = answerEvaluationService.evaluate(
-                        currentTurn.getQuestionText(),
-                        userContent,
-                        currentItem
-                );
+                InterviewEvaluationResult evaluationResult = evaluationFuture.join();
                 evaluation = evaluationResult.evaluation();
-            } catch (Exception evaluationError) {
+            } catch (CompletionException | java.util.concurrent.CancellationException evaluationError) {
                 log.error("面试单题评分失败:sessionId={},round={}",
                         sessionId, currentTurn.getRoundNo(), evaluationError);
                 evaluationFailureReason = "AI评分失败，生成报告时将整体评价";
@@ -671,25 +701,32 @@ public class InterviewServiceImpl implements InterviewService {
             } else {
                 String question = nextQuestion.orElseThrow();
                 questionCollectDispatcher.dispatch(
+                        userId,
                         sessionId,
                         assistantMsg.getId(),
                         direction,
                         question
                 );
             }
-            sendEvent(emitter, Map.of(
-                    "type", "done",
-                    "messageId", assistantMsg.getId(),
-                    "finished", finalRound,
-                    "answeredCount", currentTurn.getRoundNo(),
-                    "targetCount", targetCount
-            ));
-            emitter.complete();
+            // done 表示下一次请求已经可以开始；先释放本轮聊天锁。
+            redisLockManager.unlock(lockKey, lockToken);
+            if (streamState.compareAndSet(1, 2)) {
+                sendEvent(emitter, Map.of(
+                        "type", "done",
+                        "messageId", assistantMsg.getId(),
+                        "finished", finalRound,
+                        "answeredCount", currentTurn.getRoundNo(),
+                        "targetCount", targetCount
+                ));
+                emitter.complete();
+            }
         } catch (Exception e) {
             // 落库失败也要把流关掉并告诉前端,否则 emitter 既不 complete 也不发 error,前端 reader 永远挂着
             log.error("流式完成后落库失败:sessionId={}", sessionId, e);
-            sendEvent(emitter, Map.of("type", "error", "message", "回复保存失败，请重试"));
-            emitter.completeWithError(e);
+            if (streamState.compareAndSet(1, 2)) {
+                sendEvent(emitter, Map.of("type", "error", "message", "回复保存失败，请重试"));
+                emitter.completeWithError(e);
+            }
         } finally {
             redisLockManager.unlock(lockKey, lockToken);
         }

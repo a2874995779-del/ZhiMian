@@ -2,6 +2,7 @@ package com.zhimian.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhimian.ai.AiChatClientFactory;
 import com.zhimian.mapper.AiQuestionCandidateMapper;
 import com.zhimian.mapper.CategoryMapper;
 import com.zhimian.mapper.QuestionMapper;
@@ -14,7 +15,6 @@ import com.zhimian.service.AiQuestionCollectorService;
 import com.zhimian.util.QuestionTextNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -32,11 +32,12 @@ public class AiQuestionCollectorServiceImpl implements AiQuestionCollectorServic
     private final CategoryMapper categoryMapper;
     private final TagMapper tagMapper;
     private final QuestionTextNormalizer normalizer;
-    private final ChatClient chatClient;
+    private final AiChatClientFactory aiChatClientFactory;
     private final ObjectMapper objectMapper;
 
     @Override
-    public void collect(Long sessionId,
+    public void collect(Long userId,
+                        Long sessionId,
                         Long assistantMessageId,
                         String direction,
                         String question) {
@@ -76,7 +77,7 @@ public class AiQuestionCollectorServiceImpl implements AiQuestionCollectorServic
         }
 
         try {
-            enrich(candidate);
+            enrich(userId, candidate);
         } catch (Exception e) {
             log.error("AI候选题补全失败:candidateId={}", candidate.getId(), e);
             candidateMapper.markFailed(candidate.getId(), "候选题补全失败，请人工处理");
@@ -89,7 +90,7 @@ public class AiQuestionCollectorServiceImpl implements AiQuestionCollectorServic
                 .anyMatch(normalizedTitle::equals);
     }
 
-    private void enrich(AiQuestionCandidate candidate) throws JsonProcessingException {
+    private void enrich(Long userId, AiQuestionCandidate candidate) throws JsonProcessingException {
         List<Category> categories = categoryMapper.selectAll();
         List<Tag> tags = Arrays.asList(tagMapper.selectAll());
         if (categories.isEmpty()) {
@@ -105,7 +106,7 @@ public class AiQuestionCollectorServiceImpl implements AiQuestionCollectorServic
                 .toList()
                 .toString();
 
-        AiQuestionEnrichment result = chatClient
+        AiQuestionEnrichment result = aiChatClientFactory.forUser(userId)
                 .prompt()
                 .system("""
                         你是技术题库编辑。请为给定的面试题生成适合学习的参考答案，并从给定选项中选择分类和标签。

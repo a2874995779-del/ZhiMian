@@ -14,4 +14,12 @@ public interface UserMapper {
     User selectByUsername(@NotBlank(message = "用户名不能为空") String username);
 
     List<User> selectByIds(@Param("ids") List<Long> userIds);
+
+    UserAiModelConfig selectAiModelConfigById(@Param("id") Long id);
+
+    int updateAiModelConfig(@Param("id") Long id,
+                            @Param("model") String model,
+                            @Param("encryptedApiKey") String encryptedApiKey);
+
+    int clearAiModelConfig(@Param("id") Long id);
 }

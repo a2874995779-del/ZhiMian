@@ -22,4 +22,26 @@
             #{id}
         </foreach>
     </select>
+
+    <select id="selectAiModelConfigById" resultType="com.zhimian.mapper.UserAiModelConfig">
+        SELECT ai_model AS model, ai_api_key_encrypted AS encryptedApiKey
+        FROM user
+        WHERE id = #{id} AND is_deleted = 0
+    </select>
+
+    <update id="updateAiModelConfig">
+        UPDATE user
+        SET ai_model = #{model},
+            ai_api_key_encrypted = #{encryptedApiKey},
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id} AND is_deleted = 0
+    </update>
+
+    <update id="clearAiModelConfig">
+        UPDATE user
+        SET ai_model = NULL,
+            ai_api_key_encrypted = NULL,
+            update_time = CURRENT_TIMESTAMP
+        WHERE id = #{id} AND is_deleted = 0
+    </update>
 </mapper>

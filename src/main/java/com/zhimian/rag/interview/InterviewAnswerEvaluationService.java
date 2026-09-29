@@ -25,11 +25,11 @@ public class InterviewAnswerEvaluationService {
     private final ExecutorService interviewEvaluationExecutor;
     private final RagProperties ragProperties;
 
-    public InterviewEvaluationResult evaluate(String question, String answer, InterviewPlanItem item){
+    public InterviewEvaluationResult evaluate(Long userId, String question, String answer, InterviewPlanItem item){
         CompletableFuture<InterviewEvaluationResult> future = null;
         try {
             future = CompletableFuture.supplyAsync(
-                    () -> evaluateInternal(question, answer, item),
+                    () -> evaluateInternal(userId, question, answer, item),
                     interviewEvaluationExecutor
             );
             return future.get(
@@ -57,6 +57,14 @@ public class InterviewAnswerEvaluationService {
         }
     }
 
+    public CompletableFuture<InterviewEvaluationResult> evaluateAsync(
+            Long userId, String question, String answer, InterviewPlanItem item) {
+        return CompletableFuture.supplyAsync(
+                () -> evaluateInternal(userId, question, answer, item),
+                interviewEvaluationExecutor
+        ).orTimeout(resolveTimeoutSeconds(), TimeUnit.SECONDS);
+    }
+
     private void cancelQuietly(CompletableFuture<?> future) {
         if (future != null) {
             future.cancel(true);
@@ -64,6 +72,7 @@ public class InterviewAnswerEvaluationService {
     }
 
     private InterviewEvaluationResult evaluateInternal(
+            Long userId,
             String question,
             String answer,
             InterviewPlanItem item
@@ -73,6 +82,7 @@ public class InterviewAnswerEvaluationService {
         for(int attempt =1;attempt <= MAX_ATTEMPTS;attempt++){
             try {
                 GroundedEvaluationOutput output = generator.generate(
+                        userId,
                         question,
                         answer,
                         evidence

@@ -14,6 +14,8 @@ CREATE TABLE `user` (
   `password`    VARCHAR(100) NOT NULL COMMENT 'BCrypt 密文(固定 60 字符,留余量)',
   `nickname`    VARCHAR(64)  DEFAULT NULL COMMENT '昵称',
   `avatar`      VARCHAR(255) DEFAULT NULL COMMENT '头像 URL',
+  `ai_model` VARCHAR(128) DEFAULT NULL COMMENT '用户自定义聊天模型名',
+  `ai_api_key_encrypted` TEXT DEFAULT NULL COMMENT '用户聊天模型 API Key 密文',
   `role`        VARCHAR(16)  NOT NULL DEFAULT 'user' COMMENT '角色:user/admin',
   `status`      TINYINT      NOT NULL DEFAULT 0 COMMENT '0-正常 1-封禁',
   `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',

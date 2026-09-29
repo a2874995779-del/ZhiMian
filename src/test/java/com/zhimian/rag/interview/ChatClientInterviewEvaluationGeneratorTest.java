@@ -1,6 +1,7 @@
 package com.zhimian.rag.interview;
 
 import com.zhimian.rag.retrieval.InterviewRagEvidence;
+import com.zhimian.ai.AiChatClientFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
@@ -17,15 +18,18 @@ import static org.mockito.Mockito.when;
 class ChatClientInterviewEvaluationGeneratorTest {
 
     private ChatClient chatClient;
+    private AiChatClientFactory chatClientFactory;
     private InterviewEvaluationPromptBuilder promptBuilder;
     private ChatClientInterviewEvaluationGenerator generator;
 
     @BeforeEach
     void setUp() {
         chatClient = mock(ChatClient.class, RETURNS_DEEP_STUBS);
+        chatClientFactory = mock(AiChatClientFactory.class);
+        when(chatClientFactory.forUser(7L)).thenReturn(chatClient);
         promptBuilder = mock(InterviewEvaluationPromptBuilder.class);
         generator = new ChatClientInterviewEvaluationGenerator(
-                chatClient, promptBuilder);
+                chatClientFactory, promptBuilder);
         when(promptBuilder.systemPrompt()).thenReturn("system");
         when(promptBuilder.userPrompt(anyString(), anyString(),
                 org.mockito.ArgumentMatchers.any())).thenReturn("user");
@@ -41,7 +45,7 @@ class ChatClientInterviewEvaluationGeneratorTest {
                 .entity(GroundedEvaluationOutput.class))
                 .thenReturn(output);
 
-        assertThat(generator.generate("问题", "回答", evidence()))
+        assertThat(generator.generate(7L, "问题", "回答", evidence()))
                 .isSameAs(output);
     }
 
@@ -56,7 +60,7 @@ class ChatClientInterviewEvaluationGeneratorTest {
                 .entity(GroundedEvaluationOutput.class))
                 .thenReturn(output);
 
-        assertThatThrownBy(() -> generator.generate(
+        assertThatThrownBy(() -> generator.generate(7L,
                 "问题", "回答", evidence()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("面试评价模型返回字段不完整");
@@ -64,7 +68,7 @@ class ChatClientInterviewEvaluationGeneratorTest {
 
     @Test
     void rejectsMissingEvidence() {
-        assertThatThrownBy(() -> generator.generate("问题", "回答", null))
+        assertThatThrownBy(() -> generator.generate(7L, "问题", "回答", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("面试评价证据不能为空");
     }

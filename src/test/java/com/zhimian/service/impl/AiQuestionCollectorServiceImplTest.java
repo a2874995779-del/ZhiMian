@@ -1,6 +1,7 @@
 package com.zhimian.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhimian.ai.AiChatClientFactory;
 import com.zhimian.mapper.AiQuestionCandidateMapper;
 import com.zhimian.mapper.CategoryMapper;
 import com.zhimian.mapper.QuestionMapper;
@@ -12,7 +13,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.client.ChatClient;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -32,7 +32,7 @@ class AiQuestionCollectorServiceImplTest {
     @Mock
     private TagMapper tagMapper;
     @Mock
-    private ChatClient chatClient;
+    private AiChatClientFactory chatClientFactory;
 
     private AiQuestionCollectorServiceImpl collectorService;
 
@@ -44,7 +44,7 @@ class AiQuestionCollectorServiceImplTest {
                 categoryMapper,
                 tagMapper,
                 new QuestionTextNormalizer(),
-                chatClient,
+                chatClientFactory,
                 new ObjectMapper()
         );
     }
@@ -55,10 +55,10 @@ class AiQuestionCollectorServiceImplTest {
         when(questionMapper.selectAllTitles()).thenReturn(java.util.List.of());
         when(candidateMapper.insertIgnore(any(AiQuestionCandidate.class))).thenReturn(0);
 
-        collectorService.collect(1L, 10L, "jvm", "什么是 JVM？");
+        collectorService.collect(7L, 1L, 10L, "jvm", "什么是 JVM？");
 
         verify(candidateMapper).incrementDuplicate(anyString());
-        verifyNoInteractions(categoryMapper, tagMapper, chatClient);
+        verifyNoInteractions(categoryMapper, tagMapper, chatClientFactory);
     }
 
     @Test
@@ -66,20 +66,20 @@ class AiQuestionCollectorServiceImplTest {
         when(candidateMapper.existsBySourceMessage(10L)).thenReturn(false);
         when(questionMapper.selectAllTitles()).thenReturn(java.util.List.of("什么是 JVM"));
 
-        collectorService.collect(1L, 10L, "jvm", "什么是 JVM？");
+        collectorService.collect(7L, 1L, 10L, "jvm", "什么是 JVM？");
 
         verify(candidateMapper, never()).insertIgnore(any());
-        verifyNoInteractions(categoryMapper, tagMapper, chatClient);
+        verifyNoInteractions(categoryMapper, tagMapper, chatClientFactory);
     }
 
     @Test
     void processedSourceMessageIsIdempotent() {
         when(candidateMapper.existsBySourceMessage(10L)).thenReturn(true);
 
-        collectorService.collect(1L, 10L, "jvm", "什么是 JVM？");
+        collectorService.collect(7L, 1L, 10L, "jvm", "什么是 JVM？");
 
         verify(questionMapper, never()).selectAllTitles();
         verify(candidateMapper, never()).insertIgnore(any());
-        verifyNoInteractions(categoryMapper, tagMapper, chatClient);
+        verifyNoInteractions(categoryMapper, tagMapper, chatClientFactory);
     }
 }
