@@ -56,9 +56,9 @@ export interface InterviewSessionVO {
   answeredQuestionCount: number
 }
 
-// 后端 chat 接口现在是 SSE 流,不再是一次性的 JSON 回复,事件类型对应 InterviewServiceImpl.sendEvent 发的三种 payload
+// 后端 chat 接口返回 SSE 流，processing 表示文本已生成、评分和保存仍在进行。
 export interface ChatStreamEvent {
-  type: 'delta' | 'done' | 'error'
+  type: 'delta' | 'processing' | 'done' | 'error'
   content?: string
   messageId?: number
   message?: string

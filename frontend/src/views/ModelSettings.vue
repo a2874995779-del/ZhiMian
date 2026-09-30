@@ -51,6 +51,10 @@ async function save() {
 }
 
 async function testConnection() {
+  if (!model.value.trim()) {
+    ElMessage.warning('请填写模型名称')
+    return
+  }
   if (!settings.value?.configured && !apiKey.value.trim()) {
     ElMessage.warning('请先填写模型名称和 API Key')
     return
@@ -59,6 +63,7 @@ async function testConnection() {
   try {
     if (apiKey.value.trim() || model.value.trim() !== settings.value?.model) {
       settings.value = await saveAiModelSettings(model.value.trim(), apiKey.value.trim() || undefined)
+      model.value = settings.value.model ?? ''
       apiKey.value = ''
     }
     await testAiModelSettings()

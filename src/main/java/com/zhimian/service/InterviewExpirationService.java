@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Slf4j
@@ -40,61 +39,55 @@ public class InterviewExpirationService {
     }
 
     public int expireInactiveForUser(Long userId) {
-        LocalDateTime cutoff = cutoff();
         return expireCandidates(
-                sessionMapper.selectExpiredIdsByUserId(userId, cutoff, SCAN_BATCH_SIZE), cutoff
+                sessionMapper.selectExpiredIdsByUserId(userId, inactiveTimeoutMinutes, SCAN_BATCH_SIZE)
         );
     }
 
     public int expireInactiveSessions() {
-        LocalDateTime cutoff = cutoff();
-        return expireCandidates(sessionMapper.selectExpiredIds(cutoff, SCAN_BATCH_SIZE), cutoff);
+        return expireCandidates(sessionMapper.selectExpiredIds(inactiveTimeoutMinutes, SCAN_BATCH_SIZE));
     }
 
     public boolean expireIfInactive(Long sessionId) {
-        return expireOne(sessionId, cutoff());
+        return expireOne(sessionId);
     }
 
     /**
      * 调用方已经持有该会话的聊天锁时使用，避免重复获取同一把非可重入锁。
      */
     public boolean expireWhileHoldingChatLock(Long sessionId) {
-        return expirePersistedSession(sessionId, cutoff());
+        return expirePersistedSession(sessionId);
     }
 
-    private int expireCandidates(List<Long> sessionIds, LocalDateTime cutoff) {
+    private int expireCandidates(List<Long> sessionIds) {
         int expired = 0;
         for (Long sessionId : sessionIds) {
-            if (expireOne(sessionId, cutoff)) {
+            if (expireOne(sessionId)) {
                 expired++;
             }
         }
         return expired;
     }
 
-    private boolean expireOne(Long sessionId, LocalDateTime cutoff) {
+    private boolean expireOne(Long sessionId) {
         String lockKey = CHAT_LOCK_PREFIX + sessionId;
         String lockToken = redisLockManager.tryLock(lockKey, EXPIRATION_LOCK_TTL);
         if (lockToken == null) {
             return false;
         }
         try {
-            return expirePersistedSession(sessionId, cutoff);
+            return expirePersistedSession(sessionId);
         } finally {
             redisLockManager.unlock(lockKey, lockToken);
         }
     }
 
-    private boolean expirePersistedSession(Long sessionId, LocalDateTime cutoff) {
-        boolean expired = persistenceService.expireInactive(sessionId, cutoff);
+    private boolean expirePersistedSession(Long sessionId) {
+        boolean expired = persistenceService.expireInactive(sessionId, inactiveTimeoutMinutes);
         if (expired) {
             evictContextQuietly(sessionId);
         }
         return expired;
-    }
-
-    private LocalDateTime cutoff() {
-        return LocalDateTime.now().minusMinutes(inactiveTimeoutMinutes);
     }
 
     private void evictContextQuietly(Long sessionId) {

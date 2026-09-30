@@ -58,12 +58,19 @@ public class AiModelSettingsController {
     }
 
     private boolean isSecureTransport(HttpServletRequest request) {
+        if (request.isSecure()) {
+            return true;
+        }
+        String remoteAddress = request.getRemoteAddr();
+        boolean localPeer = "127.0.0.1".equals(remoteAddress)
+                || "::1".equals(remoteAddress)
+                || "0:0:0:0:0:0:0:1".equals(remoteAddress);
+        if (!localPeer) {
+            return false;
+        }
         String forwardedProto = request.getHeader("X-Forwarded-Proto");
         if (StringUtils.hasText(forwardedProto)) {
             return "https".equalsIgnoreCase(forwardedProto.strip());
-        }
-        if (request.isSecure()) {
-            return true;
         }
         String origin = request.getHeader("Origin");
         String host = request.getServerName();

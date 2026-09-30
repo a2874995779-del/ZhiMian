@@ -38,7 +38,21 @@ class AiModelSettingsControllerTest {
     void rejectsApiKeySubmissionOverPublicHttp() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setServerName("zhimian.example.com");
+        request.setRemoteAddr("203.0.113.5");
         request.addHeader("Origin", "http://zhimian.example.com");
+
+        assertThatThrownBy(() -> controller.save(settings("model", "sk-secret"), request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("保存 API Key 必须通过 HTTPS 连接");
+
+        verifyNoInteractions(settingsService);
+    }
+
+    @Test
+    void ignoresSpoofedHttpsHeaderFromPublicClient() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("203.0.113.5");
+        request.addHeader("X-Forwarded-Proto", "https");
 
         assertThatThrownBy(() -> controller.save(settings("model", "sk-secret"), request))
                 .isInstanceOf(BusinessException.class)
@@ -52,6 +66,7 @@ class AiModelSettingsControllerTest {
         UserContext.set(7L, "user", "token", System.currentTimeMillis() + 60_000);
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setServerName("zhimian.example.com");
+        request.setRemoteAddr("127.0.0.1");
         request.addHeader("X-Forwarded-Proto", "https");
         when(settingsService.save(eq(7L), any(AiModelSettingsUpdateDTO.class)))
                 .thenReturn(new AiModelSettingsVO(true, "SiliconFlow 兼容接口", "model", "••••1234"));

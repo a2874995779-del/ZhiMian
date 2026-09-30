@@ -37,7 +37,7 @@
         WHERE user_id = #{userId}
           AND status = 0
           AND is_deleted = 0
-          AND update_time &lt; #{cutoff}
+          AND update_time &lt; DATE_SUB(NOW(), INTERVAL #{timeoutMinutes} MINUTE)
         ORDER BY update_time ASC
         LIMIT #{limit}
     </select>
@@ -47,7 +47,7 @@
         FROM interview_session
         WHERE status = 0
           AND is_deleted = 0
-          AND update_time &lt; #{cutoff}
+          AND update_time &lt; DATE_SUB(NOW(), INTERVAL #{timeoutMinutes} MINUTE)
         ORDER BY update_time ASC
         LIMIT #{limit}
     </select>
@@ -106,7 +106,7 @@
         WHERE id = #{id}
           AND is_deleted = 0
           AND status = 0
-          AND update_time &lt; #{cutoff}
+          AND update_time &lt; DATE_SUB(NOW(), INTERVAL #{timeoutMinutes} MINUTE)
     </update>
 
     <update id="incrementAnsweredCount">

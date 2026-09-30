@@ -45,6 +45,9 @@ const selectedQuestionCount = ref(8)
 const targetQuestionCount = ref(8)
 const answeredQuestionCount = ref(0)
 const waitingReply = ref(false)
+const processingReply = ref(false)
+const queuedAnswer = ref<string | null>(null)
+const finishAfterReply = ref(false)
 const report = ref<InterviewReportVO | null>(null)
 const reportMessage = ref('')
 const lastReportStatus = ref<ReportStatus | null>(null)
@@ -52,6 +55,28 @@ const transcriptEl = ref<HTMLElement | null>(null)
 const planExpanded = ref(window.matchMedia('(min-width: 1200px)').matches)
 const planToggleEl = ref<HTMLButtonElement | null>(null)
 let reportTimer: number | null = null
+let queuedAnswerTimer: number | null = null
+const CHAT_RATE_WINDOW_MS = 11000
+let lastChatStartedAt = 0
+
+function clearQueuedAnswerTimer() {
+  if (queuedAnswerTimer !== null) {
+    window.clearTimeout(queuedAnswerTimer)
+    queuedAnswerTimer = null
+  }
+}
+
+function sendQueuedAnswer(id: number, startedAt: number) {
+  clearQueuedAnswerTimer()
+  const delay = Math.max(0, CHAT_RATE_WINDOW_MS - (Date.now() - startedAt))
+  queuedAnswerTimer = window.setTimeout(() => {
+    queuedAnswerTimer = null
+    if (sessionId.value !== id || phase.value !== 'chatting' || queuedAnswer.value === null) return
+    answer.value = queuedAnswer.value
+    queuedAnswer.value = null
+    void submitAnswer()
+  }, delay)
+}
 
 function closePlan() {
   planExpanded.value = false
@@ -60,6 +85,7 @@ function closePlan() {
 
 // 至少答过一轮(有一条用户消息)才让结束——否则一进来就结束,报告没内容可评
 const canFinish = computed(() => transcript.value.some((t) => t.role === 'user'))
+const hasNextQuestion = computed(() => answeredQuestionCount.value + 1 < targetQuestionCount.value)
 
 async function scrollToBottom() {
   await nextTick()
@@ -78,6 +104,7 @@ function directionOptionOf(code: string): DirectionOption | ScenarioOption | nul
 }
 
 async function applySessionDetail(detail: InterviewSessionDetailVO) {
+  clearQueuedAnswerTimer()
   if (detail.finishReason === 'INACTIVITY_TIMEOUT') {
     localStorage.removeItem('zm-active-interview-id')
     phase.value = 'picking'
@@ -94,6 +121,10 @@ async function applySessionDetail(detail: InterviewSessionDetailVO) {
   sessionId.value = detail.id
   targetQuestionCount.value = detail.targetQuestionCount
   answeredQuestionCount.value = detail.answeredQuestionCount
+  waitingReply.value = false
+  processingReply.value = false
+  queuedAnswer.value = null
+  finishAfterReply.value = false
   transcript.value = detail.messages.map((message) => ({
     role: message.role,
     content: message.content,
@@ -196,16 +227,38 @@ async function pickOption(option: DirectionOption | ScenarioOption) {
 
 async function submitAnswer() {
   const content = answer.value.trim()
-  if (!content || waitingReply.value || sessionId.value === null) {
+  if (!content || sessionId.value === null || finishAfterReply.value || (queuedAnswer.value !== null && !waitingReply.value)) {
+    return
+  }
+  if (waitingReply.value) {
+    if (!hasNextQuestion.value) {
+      ElMessage.info('当前是最后一题，完成后将生成报告')
+      return
+    }
+    if (queuedAnswer.value === null) {
+      queuedAnswer.value = content
+      answer.value = ''
+      ElMessage.info('回答已排队，本轮保存完成后自动发送')
+    }
+    return
+  }
+  if (lastChatStartedAt > 0 && Date.now() - lastChatStartedAt < CHAT_RATE_WINDOW_MS) {
+    queuedAnswer.value = content
+    answer.value = ''
+    sendQueuedAnswer(sessionId.value, lastChatStartedAt)
+    ElMessage.info('回答已排队，稍后自动发送')
     return
   }
   // 记下这次请求归属的会话:如果用户在等回复的过程中点了"重新开始",sessionId 会变,
   // 下面几个回调不能再假设自己面对的还是同一场会话,不然旧会话的回复会串进新会话的对话框里
   const requestSessionId = sessionId.value
+  const requestStartedAt = Date.now()
+  lastChatStartedAt = requestStartedAt
 
   transcript.value.push({ role: 'user', content })
   answer.value = ''
   waitingReply.value = true
+  processingReply.value = false
   scrollToBottom()
 
   // 先占一个空的 assistant 气泡,delta 事件到达时往里追加文字,打字机效果。
@@ -220,19 +273,40 @@ async function submitAnswer() {
       assistantTurn.content += delta
       scrollToBottom()
     },
+    onProcessing: () => {
+      if (sessionId.value !== requestSessionId) return
+      processingReply.value = true
+    },
     onDone: (event) => {
       if (sessionId.value !== requestSessionId) return
       answeredQuestionCount.value = event.answeredCount
       waitingReply.value = false
+      processingReply.value = false
       if (event.finished) {
+        clearQueuedAnswerTimer()
+        finishAfterReply.value = false
+        queuedAnswer.value = null
         targetQuestionCount.value = event.targetCount
         phase.value = 'generating-report'
         reportMessage.value = '已完成全部题目，正在生成评价报告'
         startReportPolling(requestSessionId)
+      } else if (finishAfterReply.value) {
+        finishAfterReply.value = false
+        queuedAnswer.value = null
+        void finishCurrentSession()
+      } else if (queuedAnswer.value !== null) {
+        sendQueuedAnswer(requestSessionId, requestStartedAt)
       }
     },
     onError: (message) => {
       if (sessionId.value !== requestSessionId) return
+      processingReply.value = false
+      finishAfterReply.value = false
+      clearQueuedAnswerTimer()
+      if (queuedAnswer.value !== null) {
+        answer.value = queuedAnswer.value
+        queuedAnswer.value = null
+      }
       // 一个字都没收到就失败:去掉这个空气泡,把刚才那句用户消息标成失败态,而不是留一个空白的 AI 回复
       if (!assistantTurn.content) {
         const idx = transcript.value.indexOf(assistantTurn)
@@ -243,6 +317,8 @@ async function submitAnswer() {
         if (lastTurn && lastTurn.role === 'user') {
           lastTurn.pending = true
         }
+      } else {
+        assistantTurn.pending = true
       }
       if (message.includes('长时间未操作')) {
         startNew()
@@ -266,7 +342,9 @@ async function endInterview() {
   if (phase.value === 'chatting') {
     try {
       await ElMessageBox.confirm(
-        `当前待回答题目不会计分，本场已完成 ${answeredQuestionCount.value} 题，确定结束吗？`,
+        waitingReply.value
+          ? '本轮回答正在处理，保存完成后将自动结束并生成报告，确定吗？'
+          : `当前待回答题目不会计分，本场已完成 ${answeredQuestionCount.value} 题，确定结束吗？`,
         '结束面试',
         { confirmButtonText: '结束并生成评价', cancelButtonText: '继续回答', type: 'warning' },
       )
@@ -274,6 +352,19 @@ async function endInterview() {
       return
     }
   }
+  if (waitingReply.value) {
+    finishAfterReply.value = true
+    queuedAnswer.value = null
+    ElMessage.info('本轮保存完成后将自动结束面试')
+    return
+  }
+  clearQueuedAnswerTimer()
+  queuedAnswer.value = null
+  await finishCurrentSession()
+}
+
+async function finishCurrentSession() {
+  if (sessionId.value === null || finishing.value) return
   finishing.value = true
   try {
     const status = await finishInterview(sessionId.value)
@@ -331,10 +422,14 @@ function stopReportPolling() {
   }
 }
 
-onUnmounted(stopReportPolling)
+onUnmounted(() => {
+  stopReportPolling()
+  clearQueuedAnswerTimer()
+})
 
 function startNew() {
   stopReportPolling()
+  clearQueuedAnswerTimer()
   phase.value = 'picking'
   activeDirection.value = null
   interviewMode.value = 'direction'
@@ -347,11 +442,17 @@ function startNew() {
   targetQuestionCount.value = selectedQuestionCount.value
   answeredQuestionCount.value = 0
   waitingReply.value = false
+  lastChatStartedAt = 0
+  processingReply.value = false
+  queuedAnswer.value = null
+  finishAfterReply.value = false
   localStorage.removeItem('zm-active-interview-id')
   router.replace({ path: '/interview' })
 }
 
-const examinerStatus = computed(() => (waitingReply.value ? '> 考官正在思考…' : '> 轮到你回答了'))
+const examinerStatus = computed(() => processingReply.value
+  ? '> 正在评分并保存本轮…'
+  : waitingReply.value ? '> 考官正在思考…' : '> 轮到你回答了')
 
 const overallProgress = computed(() => {
   if (!targetQuestionCount.value) return 0
@@ -518,11 +619,11 @@ const planSteps = computed(() => {
               class="header-finish-btn"
               type="primary"
               :loading="finishing"
-              :disabled="!canFinish || waitingReply"
+              :disabled="!canFinish || finishAfterReply"
               @click="endInterview"
             >
               <el-icon v-if="!finishing"><CircleCheck /></el-icon>
-              结束并生成报告
+              {{ finishAfterReply ? '本轮结束后生成报告' : '结束并生成报告' }}
             </el-button>
           </div>
         </header>
@@ -570,26 +671,21 @@ const planSteps = computed(() => {
                         <span>{{ turn.role === 'user' ? '' : 'AI Interviewer' }}</span>
                       </div>
                       <div class="bubble" :class="{ 'bubble--failed': turn.pending }">
-                        {{ turn.content }}
-                        <span v-if="turn.pending" class="fail-hint">发送失败</span>
+                        <template v-if="turn.content">{{ turn.content }}</template>
+                        <span v-else-if="waitingReply && i === transcript.length - 1" class="bubble--typing" aria-label="面试官正在回复">
+                          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                        </span>
+                        <span v-if="processingReply && i === transcript.length - 1" class="bubble-processing">正在评分并保存本轮…</span>
+                        <span v-if="turn.pending" class="fail-hint">{{ turn.role === 'user' ? '发送失败' : '回复未保存，请刷新会话' }}</span>
                       </div>
                     </div>
                   </div>
                 </TransitionGroup>
-                <div v-if="waitingReply" class="turn turn--assistant">
-                  <ExaminerAvatar :speaking="true" compact />
-                  <div class="turn-body">
-                    <div class="turn-meta"><span>面试官</span><span>AI Interviewer</span></div>
-                    <div class="bubble bubble--typing">
-                      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-                    </div>
-                  </div>
-                </div>
               </div>
 
               <div class="chat-toolbar">
                 <span class="examiner-status zm-prompt">{{ examinerStatus }}</span>
-                <span class="chat-progress-note">回答后自动进入下一题</span>
+                <span class="chat-progress-note" :class="{ 'chat-progress-note--queued': !!queuedAnswer }">{{ queuedAnswer ? '下一条回答已排队' : '回答后自动进入下一题' }}</span>
               </div>
 
               <div class="composer">
@@ -597,13 +693,14 @@ const planSteps = computed(() => {
                   v-model="answer"
                   type="textarea"
                   :rows="3"
+                  :disabled="!!queuedAnswer || finishAfterReply"
                   resize="none"
                   placeholder="请输入你的回答…（Ctrl + Enter 发送）"
                   @keydown.ctrl.enter="submitAnswer"
                 />
-                <el-button type="primary" :disabled="!answer.trim()" :loading="waitingReply" @click="submitAnswer">
-                  <el-icon v-if="!waitingReply"><Promotion /></el-icon>
-                  发送
+                <el-button type="primary" :disabled="!answer.trim() || !!queuedAnswer || finishAfterReply || (waitingReply && !hasNextQuestion)" @click="submitAnswer">
+                  <el-icon><Promotion /></el-icon>
+                  {{ waitingReply ? '排队发送' : '发送' }}
                 </el-button>
               </div>
             </section>
@@ -954,9 +1051,17 @@ const planSteps = computed(() => {
 }
 
 .bubble--typing {
-  display: flex;
+  display: inline-flex;
   gap: 4px;
-  padding: 16px;
+  align-items: center;
+  min-height: 20px;
+}
+
+.bubble-processing {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--zm-ink-faint);
 }
 
 .bubble--typing .dot {
@@ -1559,6 +1664,11 @@ const planSteps = computed(() => {
 
   .chat-progress-note {
     display: none;
+  }
+
+  .chat-progress-note--queued {
+    display: inline;
+    font-size: 12px;
   }
 
   .chat-toolbar {

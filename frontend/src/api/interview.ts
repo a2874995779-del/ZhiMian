@@ -51,12 +51,13 @@ export function getCurrentInterview(): Promise<InterviewSessionDetailVO | null> 
 
 export interface ChatStreamHandlers {
   onDelta: (content: string) => void
+  onProcessing: () => void
   onDone: (event: ChatDoneEvent) => void
   onError: (message: string) => void
 }
 
 // chat 接口现在返回的是 SSE 流(text/event-stream),不是一次性的 JSON 回复,不能再走 http.ts 那套
-// axios + {code,data} 解包的路子——用 fetch 手动读流,按 delta/done/error 三种事件分发给调用方。
+// axios + {code,data} 解包的路子——用 fetch 手动读流并分发事件。
 // 这个函数本身不 reject:任何失败(同步业务错误、网络异常)都归一走 handlers.onError,调用方只用管一条路径。
 export async function chatInterviewStream(
   sessionId: number,
@@ -64,6 +65,13 @@ export async function chatInterviewStream(
   handlers: ChatStreamHandlers,
 ): Promise<void> {
   let terminalReceived = false
+  let timedOut = false
+  const controller = new AbortController()
+  let processingTimer: number | null = null
+  const totalTimer = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, 310000)
   try {
     const token = localStorage.getItem('zm-token')
     const resp = await fetch(`/api/interviews/${sessionId}/chat`, {
@@ -73,6 +81,7 @@ export async function chatInterviewStream(
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ content }),
+      signal: controller.signal,
     })
 
     const contentType = resp.headers.get('content-type') ?? ''
@@ -100,11 +109,19 @@ export async function chatInterviewStream(
     let buffer = ''
 
     const dispatchFrame = (rawFrame: string) => {
+      if (terminalReceived) return
       const dataLine = rawFrame.split(/\r?\n/).find((line) => line.startsWith('data:'))
       if (!dataLine) return
       const payload: ChatStreamEvent = JSON.parse(dataLine.slice(5).trim())
       if (payload.type === 'delta') {
         handlers.onDelta(payload.content ?? '')
+      } else if (payload.type === 'processing') {
+        if (processingTimer !== null) window.clearTimeout(processingTimer)
+        processingTimer = window.setTimeout(() => {
+          timedOut = true
+          controller.abort()
+        }, 120000)
+        handlers.onProcessing()
       } else if (payload.type === 'done') {
         terminalReceived = true
         handlers.onDone({
@@ -130,6 +147,10 @@ export async function chatInterviewStream(
         const rawFrame = buffer.slice(0, match.index)
         buffer = buffer.slice(match.index + match[0].length)
         dispatchFrame(rawFrame)
+        if (terminalReceived) {
+          await reader.cancel().catch(() => undefined)
+          return
+        }
         match = /\r?\n\r?\n/.exec(buffer)
       }
     }
@@ -142,7 +163,12 @@ export async function chatInterviewStream(
   } catch {
     if (!terminalReceived) {
       terminalReceived = true
-      handlers.onError('网络异常，请确认后端服务已启动')
+      handlers.onError(timedOut
+        ? '本轮处理超时，请刷新会话确认结果'
+        : '网络异常，请确认后端服务已启动')
     }
+  } finally {
+    window.clearTimeout(totalTimer)
+    if (processingTimer !== null) window.clearTimeout(processingTimer)
   }
 }

@@ -9,7 +9,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,18 +40,18 @@ class InterviewExpirationServiceTest {
 
     @Test
     void userScanExpiresUnlockedSessionsAndEvictsTheirContext() {
-        when(sessionMapper.selectExpiredIdsByUserId(eq(7L), any(LocalDateTime.class), eq(200)))
+        when(sessionMapper.selectExpiredIdsByUserId(7L, 120L, 200))
                 .thenReturn(List.of(11L, 12L));
         when(redisLockManager.tryLock(eq("zhimian:interview:chat-lock:11"), any()))
                 .thenReturn("token-11");
         when(redisLockManager.tryLock(eq("zhimian:interview:chat-lock:12"), any()))
                 .thenReturn(null);
-        when(persistenceService.expireInactive(eq(11L), any(LocalDateTime.class))).thenReturn(true);
+        when(persistenceService.expireInactive(11L, 120L)).thenReturn(true);
 
         assertThat(service.expireInactiveForUser(7L)).isEqualTo(1);
 
         verify(contextManager).evict(11L);
-        verify(persistenceService, never()).expireInactive(eq(12L), any(LocalDateTime.class));
+        verify(persistenceService, never()).expireInactive(12L, 120L);
         verify(redisLockManager).unlock("zhimian:interview:chat-lock:11", "token-11");
     }
 
@@ -60,7 +59,7 @@ class InterviewExpirationServiceTest {
     void sessionUpdatedAfterCandidateSelectionIsNotEvicted() {
         when(redisLockManager.tryLock(eq("zhimian:interview:chat-lock:11"), any()))
                 .thenReturn("token-11");
-        when(persistenceService.expireInactive(eq(11L), any(LocalDateTime.class))).thenReturn(false);
+        when(persistenceService.expireInactive(11L, 120L)).thenReturn(false);
 
         assertThat(service.expireIfInactive(11L)).isFalse();
 
@@ -70,7 +69,7 @@ class InterviewExpirationServiceTest {
 
     @Test
     void callerHoldingChatLockCanExpireWithoutReacquiringIt() {
-        when(persistenceService.expireInactive(eq(11L), any(LocalDateTime.class))).thenReturn(true);
+        when(persistenceService.expireInactive(11L, 120L)).thenReturn(true);
 
         assertThat(service.expireWhileHoldingChatLock(11L)).isTrue();
 

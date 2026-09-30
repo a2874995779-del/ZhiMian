@@ -72,6 +72,28 @@ class AiModelSettingsServiceImplTest {
         assertThat(result.maskedApiKey()).endsWith("9876");
     }
 
+    @Test
+    void unconfiguredUserHasNoSharedFallback() {
+        when(userMapper.selectAiModelConfigById(7L)).thenReturn(null);
+
+        AiModelSettingsVO result = service.get(7L);
+
+        assertThat(result.configured()).isFalse();
+        assertThat(result.model()).isNull();
+        assertThat(result.maskedApiKey()).isNull();
+    }
+
+    @Test
+    void getReturnsOnlyPersonalConfiguration() {
+        when(userMapper.selectAiModelConfigById(7L))
+                .thenReturn(new UserAiModelConfig("personal-model", cipher.encrypt("sk-personal-9876")));
+
+        AiModelSettingsVO result = service.get(7L);
+
+        assertThat(result.model()).isEqualTo("personal-model");
+        assertThat(result.maskedApiKey()).endsWith("9876");
+    }
+
     private AiModelSettingsUpdateDTO request(String model, String apiKey) {
         AiModelSettingsUpdateDTO dto = new AiModelSettingsUpdateDTO();
         dto.setModel(model);

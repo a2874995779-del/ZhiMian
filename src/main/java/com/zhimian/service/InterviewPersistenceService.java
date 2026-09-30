@@ -10,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -83,9 +82,9 @@ public class InterviewPersistenceService {
     }
 
     @Transactional
-    public boolean expireInactive(Long sessionId, LocalDateTime cutoff) {
+    public boolean expireInactive(Long sessionId, long timeoutMinutes) {
         int expired = sessionMapper.expireInactiveSession(
-                sessionId, cutoff, InterviewExpirationService.FINISH_REASON
+                sessionId, timeoutMinutes, InterviewExpirationService.FINISH_REASON
         );
         if (expired == 0) {
             return false;
