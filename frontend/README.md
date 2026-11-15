@@ -26,4 +26,4 @@ npm run build
 - `src/components/`: 可复用业务组件。
 - `src/stores/`: Pinia 状态管理。
 - `src/types/`: 前端类型定义。
-- `src/mock/`: 暂未接后端接口的页面演示数据，后续接入真实接口后应逐步删除。
+- `src/utils/`: 通用格式化等工具函数。

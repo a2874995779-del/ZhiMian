@@ -1,4 +1,4 @@
--- 6.3.1 Interview report async-generation migration.
+-- Interview report async-generation migration.
 -- Run once for an existing local database. New databases only need init.sql.
 
 ALTER TABLE interview_report

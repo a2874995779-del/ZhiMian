@@ -1,5 +1,5 @@
--- 智面(ZhiMian)阶段一建库建表脚本
--- 阶段二/三/四的表在进入对应阶段时再执行(SQL 见 docs/backend-dev-guide.md 第 2.7 节起)
+-- 智面完整建库建表脚本，适用于新建本地数据库。
+-- 已有数据库请按对应功能选择迁移脚本。
 
 CREATE DATABASE IF NOT EXISTS zhimian
   DEFAULT CHARACTER SET utf8mb4
@@ -8,7 +8,7 @@ CREATE DATABASE IF NOT EXISTS zhimian
 USE zhimian;
 
 -- 用户表
-CREATE TABLE `user` (
+CREATE TABLE IF NOT EXISTS `user` (
   `id`          BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键',
   `username`    VARCHAR(64)  NOT NULL COMMENT '登录账号',
   `password`    VARCHAR(100) NOT NULL COMMENT 'BCrypt 密文(固定 60 字符,留余量)',
@@ -26,7 +26,7 @@ CREATE TABLE `user` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '用户表';
 
 -- 题目分类表
-CREATE TABLE `category` (
+CREATE TABLE IF NOT EXISTS `category` (
   `id`          BIGINT      NOT NULL AUTO_INCREMENT,
   `name`        VARCHAR(64) NOT NULL COMMENT '分类名,如 Java并发、MySQL',
   `parent_id`   BIGINT      NOT NULL DEFAULT 0 COMMENT '父分类 id,0 表示顶级',
@@ -39,7 +39,7 @@ CREATE TABLE `category` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '题目分类表';
 
 -- 题目表
-CREATE TABLE `question` (
+CREATE TABLE IF NOT EXISTS `question` (
   `id`             BIGINT       NOT NULL AUTO_INCREMENT,
   `title`          VARCHAR(256) NOT NULL COMMENT '题目标题',
   `content`        TEXT         DEFAULT NULL COMMENT '题干补充描述(Markdown)',
@@ -57,7 +57,7 @@ CREATE TABLE `question` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '题目表';
 
 -- 标签表
-CREATE TABLE `tag` (
+CREATE TABLE IF NOT EXISTS `tag` (
   `id`          BIGINT      NOT NULL AUTO_INCREMENT,
   `name`        VARCHAR(32) NOT NULL COMMENT '标签名,如 JVM、线程池',
   `create_time` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -66,7 +66,7 @@ CREATE TABLE `tag` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '标签表';
 
 -- 题目-标签关联表
-CREATE TABLE `question_tag` (
+CREATE TABLE IF NOT EXISTS `question_tag` (
   `question_id` BIGINT NOT NULL,
   `tag_id`      BIGINT NOT NULL,
   PRIMARY KEY (`question_id`, `tag_id`),
@@ -74,7 +74,7 @@ CREATE TABLE `question_tag` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '题目-标签关联表';
 
 -- 答题记录表
-CREATE TABLE `answer_record` (
+CREATE TABLE IF NOT EXISTS `answer_record` (
   `id`          BIGINT   NOT NULL AUTO_INCREMENT,
   `user_id`     BIGINT   NOT NULL COMMENT '答题用户',
   `question_id` BIGINT   NOT NULL COMMENT '题目',
@@ -86,7 +86,7 @@ CREATE TABLE `answer_record` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '答题记录表';
 
 -- 用户错题本
-CREATE TABLE `wrong_question` (
+CREATE TABLE IF NOT EXISTS `wrong_question` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `user_id` BIGINT NOT NULL,
   `question_id` BIGINT NOT NULL,
@@ -103,7 +103,7 @@ CREATE TABLE `wrong_question` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '用户错题本';
 
 -- 用户收藏题目
-CREATE TABLE `question_favorite` (
+CREATE TABLE IF NOT EXISTS `question_favorite` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `user_id` BIGINT NOT NULL,
   `question_id` BIGINT NOT NULL,
@@ -114,10 +114,10 @@ CREATE TABLE `question_favorite` (
   KEY `idx_question_id` (`question_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '题目收藏表';
 
--- ============ 阶段二:AI 模拟面试(任务 2.2~2.6)============
+-- AI 模拟面试
 
 -- AI 面试会话表
-CREATE TABLE `interview_session` (
+CREATE TABLE IF NOT EXISTS `interview_session` (
   `id`          BIGINT       NOT NULL AUTO_INCREMENT,
   `user_id`     BIGINT       NOT NULL COMMENT '所属用户',
   `direction`   VARCHAR(32)  NOT NULL COMMENT '专项方向或scenario',
@@ -140,7 +140,7 @@ CREATE TABLE `interview_session` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT 'AI 面试会话表';
 
 -- 面试消息表(system/user/assistant 全量历史,Redis 上下文丢失时靠它重建)
-CREATE TABLE `interview_message` (
+CREATE TABLE IF NOT EXISTS `interview_message` (
   `id`          BIGINT      NOT NULL AUTO_INCREMENT,
   `session_id`  BIGINT      NOT NULL COMMENT '会话 id',
   `role`        VARCHAR(16) NOT NULL COMMENT 'system/user/assistant',
@@ -152,7 +152,7 @@ CREATE TABLE `interview_message` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '面试消息表';
 
 -- AI 面试题目轮次。一行对应一道题，用于单题评分、统计和过滤未回答题目。
-CREATE TABLE `interview_turn` (
+CREATE TABLE IF NOT EXISTS `interview_turn` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `session_id` BIGINT NOT NULL,
   `user_id` BIGINT NOT NULL,
@@ -172,7 +172,7 @@ CREATE TABLE `interview_turn` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT 'AI 面试单题轮次';
 
 -- AI 面试自动沉淀的候选题
-CREATE TABLE `ai_question_candidate` (
+CREATE TABLE IF NOT EXISTS `ai_question_candidate` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,
   `title` VARCHAR(256) NOT NULL COMMENT '从 AI 回复中提取的问题',
   `normalized_title` VARCHAR(256) NOT NULL COMMENT '标准化后的问题',
@@ -198,7 +198,7 @@ CREATE TABLE `ai_question_candidate` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT 'AI 面试候选题';
 
 -- 面试评价报告表(一场会话一份,uk_session_id 兼作幂等兜底)
-CREATE TABLE `interview_report` (
+CREATE TABLE IF NOT EXISTS `interview_report` (
   `id`          BIGINT   NOT NULL AUTO_INCREMENT,
   `session_id`  BIGINT   NOT NULL COMMENT '会话 id',
   `score`       INT      DEFAULT NULL COMMENT 'score 0-100, nullable while generating',
@@ -210,3 +210,51 @@ CREATE TABLE `interview_report` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_session_id` (`session_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT '面试评价报告表';
+
+-- 知识库文档与分块
+
+
+CREATE TABLE IF NOT EXISTS `knowledge_document` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `title` VARCHAR(200) NOT NULL COMMENT '知识文档标题',
+  `original_filename` VARCHAR(255) NOT NULL COMMENT '上传时的原始文件名',
+  `source_type` VARCHAR(16) NOT NULL COMMENT '来源类型：MARKDOWN/TEXT',
+  `content` MEDIUMTEXT NOT NULL COMMENT '规范化后的完整原文',
+  `content_hash` CHAR(64) NOT NULL COMMENT '规范化原文的SHA-256',
+  `status` TINYINT NOT NULL DEFAULT 0 COMMENT '0-待处理 1-处理中 2-已完成 3-失败 4-删除中',
+  `chunk_count` INT NOT NULL DEFAULT 0 COMMENT '切片数量',
+  `embedding_model` VARCHAR(128) DEFAULT NULL COMMENT '实际使用的Embedding模型',
+  `vector_dimension` INT DEFAULT NULL COMMENT '实际向量维度',
+  `error_message` VARCHAR(500) DEFAULT NULL COMMENT '最近一次失败原因',
+  `created_by` BIGINT NOT NULL COMMENT '创建人用户id',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `is_deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '0-正常 1-已删除',
+  `active_content_hash` CHAR(64)
+    GENERATED ALWAYS AS (
+      CASE WHEN `is_deleted` = 0 THEN `content_hash` ELSE NULL END
+    ) STORED COMMENT '只约束未删除文档的内容Hash',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_active_content_hash` (`active_content_hash`),
+  KEY `idx_status_time` (`status`, `create_time`),
+  KEY `idx_created_by_time` (`created_by`, `create_time`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT 'RAG知识文档';
+
+CREATE TABLE IF NOT EXISTS `knowledge_chunk` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `document_id` BIGINT NOT NULL COMMENT '所属知识文档id',
+  `chunk_index` INT NOT NULL COMMENT '片段在文档中的顺序，从0开始',
+  `heading_path` VARCHAR(500) DEFAULT NULL COMMENT 'Markdown标题路径',
+  `content` TEXT NOT NULL COMMENT '片段原文',
+  `content_hash` CHAR(64) NOT NULL COMMENT '片段原文SHA-256',
+  `token_count` INT NOT NULL DEFAULT 0 COMMENT '片段Token数量',
+  `vector_status` TINYINT NOT NULL DEFAULT 0 COMMENT '0-待向量化 1-已索引 2-失败',
+  `error_message` VARCHAR(500) DEFAULT NULL COMMENT '向量化失败原因',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `is_deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '0-正常 1-已删除',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_document_chunk_index` (`document_id`, `chunk_index`),
+  KEY `idx_document_status` (`document_id`, `vector_status`),
+  KEY `idx_content_hash` (`content_hash`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT 'RAG知识片段';

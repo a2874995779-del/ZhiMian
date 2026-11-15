@@ -13,14 +13,14 @@ const lines = computed(() =>
 </script>
 
 <template>
-  <div class="mock-editor">
-    <div class="mock-editor-titlebar">
+  <div class="code-editor">
+    <div class="code-editor-titlebar">
       <span class="dot dot--red"></span>
       <span class="dot dot--yellow"></span>
       <span class="dot dot--green"></span>
-      <span class="mock-editor-filename zm-prompt">answer.{{ language }}</span>
+      <span class="code-editor-filename zm-prompt">answer.{{ language }}</span>
     </div>
-    <pre class="mock-editor-body"><code
+    <pre class="code-editor-body"><code
       ><span v-for="(line, i) in lines" :key="i" class="code-line"
         ><span class="line-no">{{ i + 1 }}</span><span class="line-content" v-html="line"></span></span
     ></code></pre>
@@ -28,7 +28,7 @@ const lines = computed(() =>
 </template>
 
 <style scoped>
-.mock-editor {
+.code-editor {
   border-radius: var(--zm-radius-md);
   overflow: hidden;
   background: #1b1b1f;
@@ -36,7 +36,7 @@ const lines = computed(() =>
   box-shadow: var(--zm-shadow-lg);
 }
 
-.mock-editor-titlebar {
+.code-editor-titlebar {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -60,13 +60,13 @@ const lines = computed(() =>
   background: #28c840;
 }
 
-.mock-editor-filename {
+.code-editor-filename {
   margin-left: 8px;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.45) !important;
 }
 
-.mock-editor-body {
+.code-editor-body {
   margin: 0;
   padding: 16px 0;
   overflow-x: auto;

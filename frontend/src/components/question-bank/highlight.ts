@@ -39,7 +39,7 @@ export function highlightLine(line: string, lang: string): string {
 
   if (commentToken) {
     const idx = code.indexOf(commentToken)
-    // 简单起见不处理"字符串里恰好包含注释符号"这种边界情况——mock 代码块不需要那么严谨
+    // 按首个注释标记拆分，暂不区分字符串内部的同名符号。
     if (idx !== -1) {
       comment = code.slice(idx)
       code = code.slice(0, idx)

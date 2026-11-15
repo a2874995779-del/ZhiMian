@@ -5,7 +5,7 @@ import { Star, StarFilled } from '@element-plus/icons-vue'
 import { addFavorite, checkFavorite, removeFavorite } from '../../api/favorite'
 import { useAuthStore } from '../../stores/auth'
 import type { QuestionDetail } from '../../types/question'
-import MockCodeBlock from './MockCodeBlock.vue'
+import CodeBlock from './CodeBlock.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -110,7 +110,7 @@ watch(
         </section>
 
         <section v-if="question.codeSnippet" class="detail-code">
-          <MockCodeBlock :language="question.codeSnippet.language" :code="question.codeSnippet.code" />
+          <CodeBlock :language="question.codeSnippet.language" :code="question.codeSnippet.code" />
         </section>
       </div>
     </div>

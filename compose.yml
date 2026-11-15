@@ -1,0 +1,30 @@
+services:
+  mysql:
+    image: registry-1.docker.io/library/mysql:8.0.43
+    environment:
+      MYSQL_ROOT_PASSWORD: zhimian_local_root_password
+      MYSQL_DATABASE: zhimian
+      MYSQL_USER: zhimian
+      MYSQL_PASSWORD: zhimian_local_password
+    ports:
+      - "127.0.0.1:23307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./sql/test-data.sql:/docker-entrypoint-initdb.d/02-demo-data.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+  redis:
+    image: redis/redis-stack-server:7.4.0-v8
+    ports:
+      - "127.0.0.1:26380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  mysql-data:
