@@ -31,6 +31,9 @@ mybatis:
 
 # 项目自定义配置
 zhimian:
+  ai:
+    # Temporary exception for administrators only. Disable after enabling HTTPS.
+    allow-admin-http: ${ZHIMIAN_AI_ALLOW_ADMIN_HTTP:false}
   jwt:
     # secret 在 application-local.yml 中配置,长度必须 >= 32 字节
     expire-hours: 24

@@ -19,6 +19,25 @@ const testing = ref(false)
 const clearing = ref(false)
 const secureTransport = computed(() => window.location.protocol === 'https:'
   || ['localhost', '127.0.0.1'].includes(window.location.hostname))
+const canSubmit = computed(() => !!settings.value && (secureTransport.value || settings.value.httpAllowed))
+
+async function confirmTransport() {
+  if (!canSubmit.value) {
+    ElMessage.warning('当前连接不允许提交模型配置，请使用 HTTPS 或联系站点管理员')
+    return false
+  }
+  if (secureTransport.value) return true
+  try {
+    await ElMessageBox.confirm('当前使用 HTTP，API Key 和登录凭证可能被窃听。建议使用限额、可随时撤销的临时 Key。确定继续吗？', 'HTTP 连接未加密', {
+      confirmButtonText: '确认继续',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    return true
+  } catch {
+    return false
+  }
+}
 
 async function loadSettings() {
   loading.value = true
@@ -39,12 +58,13 @@ async function save() {
     ElMessage.warning('首次配置需要填写 API Key')
     return
   }
+  if (!await confirmTransport()) return
   saving.value = true
   try {
     settings.value = await saveAiModelSettings(model.value.trim(), apiKey.value.trim() || undefined)
     model.value = settings.value.model ?? ''
     apiKey.value = ''
-    ElMessage.success('模型配置已安全保存')
+    ElMessage.success('模型配置已保存')
   } finally {
     saving.value = false
   }
@@ -59,6 +79,7 @@ async function testConnection() {
     ElMessage.warning('请先填写模型名称和 API Key')
     return
   }
+  if (!await confirmTransport()) return
   testing.value = true
   try {
     if (apiKey.value.trim() || model.value.trim() !== settings.value?.model) {
@@ -114,7 +135,9 @@ onMounted(loadSettings)
     <el-alert
       v-if="!secureTransport"
       class="transport-alert"
-      title="请先启用 HTTPS，再保存或测试 API Key。当前连接未加密，密钥提交已禁用。"
+      :title="settings?.httpAllowed
+        ? '管理员临时 HTTP 模式已开启。连接未加密，API Key 仍有泄露风险，建议尽快启用 HTTPS。'
+        : '请先启用 HTTPS，再保存或测试 API Key。当前连接未加密，密钥提交已禁用。'"
       type="warning"
       :closable="false"
       show-icon
@@ -134,6 +157,7 @@ onMounted(loadSettings)
           <el-form-item label="模型名称">
             <el-input
               v-model="model"
+              :disabled="!canSubmit"
               placeholder="例如 deepseek-ai/DeepSeek-V3.2"
               maxlength="128"
               autocomplete="off"
@@ -142,6 +166,7 @@ onMounted(loadSettings)
           <el-form-item label="API Key">
             <el-input
               v-model="apiKey"
+              :disabled="!canSubmit"
               type="password"
               show-password
               autocomplete="new-password"
@@ -149,15 +174,15 @@ onMounted(loadSettings)
             />
           </el-form-item>
           <div class="form-actions">
-            <el-button type="primary" :loading="saving" :disabled="!secureTransport" @click="save">
+            <el-button type="primary" :loading="saving" :disabled="!canSubmit || testing || clearing" @click="save">
               <el-icon><Check /></el-icon>
               保存配置
             </el-button>
-            <el-button :loading="testing" :disabled="!secureTransport" @click="testConnection">
+            <el-button :loading="testing" :disabled="!canSubmit || saving || clearing" @click="testConnection">
               <el-icon><Link /></el-icon>
               测试连接
             </el-button>
-            <el-button v-if="settings?.configured" text type="danger" :loading="clearing" @click="clearSettings">
+            <el-button v-if="settings?.configured" text type="danger" :loading="clearing" :disabled="saving || testing" @click="clearSettings">
               <el-icon><Delete /></el-icon>
               移除
             </el-button>

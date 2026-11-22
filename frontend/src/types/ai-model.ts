@@ -3,4 +3,5 @@ export interface AiModelSettings {
   provider: string
   model: string | null
   maskedApiKey: string | null
+  httpAllowed: boolean
 }

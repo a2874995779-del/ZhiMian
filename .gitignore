@@ -10,7 +10,11 @@ target/
 application-local.yml
 
 # Local project notes and editor configuration
+.claude/
 docs/
+阶段部署/
+design-qa.md
+Java面试题与标准回答汇总.md
 
 # Frontend build output
 frontend/node_modules/

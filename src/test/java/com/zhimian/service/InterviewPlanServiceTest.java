@@ -2,10 +2,13 @@ package com.zhimian.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhimian.model.dto.CreateInterviewDTO;
+import com.zhimian.model.entity.InterviewSession;
 import com.zhimian.model.interview.InterviewPlan;
 import com.zhimian.model.interview.InterviewPlanItem;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.HashSet;
 import java.util.List;
@@ -143,6 +146,96 @@ class InterviewPlanServiceTest {
                 .toList();
 
         assertThat(plans).hasSizeGreaterThan(1);
+    }
+
+    @Test
+    void springDirectionProvidesTwelveDistinctQuestionsAndCoreCoverage() {
+        CreateInterviewDTO dto = new CreateInterviewDTO();
+        dto.setDirection("spring");
+        dto.setTargetQuestionCount(12);
+
+        InterviewPlan plan = service.build(dto);
+
+        assertThat(plan.title()).contains("Spring");
+        assertThat(plan.focus()).contains("IoC", "AOP", "事务", "MVC");
+        assertThat(plan.items()).hasSize(12);
+        assertThat(plan.items()).extracting(InterviewPlanItem::questionText).doesNotHaveDuplicates();
+        assertThat(plan.items()).extracting(InterviewPlanItem::moduleCode)
+                .contains("ioc", "aop", "transaction", "spring_boot", "spring_mvc");
+        assertThat(plan.items()).allSatisfy(item -> assertThat(item.difficulty()).isBetween(1, 3));
+    }
+
+    @Test
+    void shortestSpringPlanStillCoversTheFiveCoreAreas() {
+        CreateInterviewDTO dto = new CreateInterviewDTO();
+        dto.setDirection("spring");
+        dto.setTargetQuestionCount(5);
+
+        InterviewPlan plan = service.build(dto);
+
+        assertThat(plan.items()).hasSize(5);
+        assertThat(plan.items()).extracting(InterviewPlanItem::moduleCode)
+                .containsExactly("ioc", "aop", "transaction", "spring_boot", "spring_mvc");
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "alibaba_style_backend,5", "alibaba_style_backend,8", "alibaba_style_backend,12",
+            "ant_style_backend,5", "ant_style_backend,8", "ant_style_backend,12",
+            "jd_style_backend,5", "jd_style_backend,8", "jd_style_backend,12"
+    })
+    void newCompanyScenariosCoverCoreSkillsWithinRequestedLength(String code, int count) {
+        InterviewPlan plan = service.build(scenario(code, count));
+
+        assertThat(plan.items()).hasSize(count);
+        assertThat(plan.items().get(0).moduleCode()).isEqualTo("project");
+        assertThat(plan.items()).extracting(InterviewPlanItem::moduleCode)
+                .contains("spring", "mysql", "redis").doesNotHaveDuplicates();
+        assertThat(plan.items()).extracting(InterviewPlanItem::questionText).doesNotHaveDuplicates();
+        assertThat(plan.items()).allSatisfy(item -> {
+            assertThat(item.difficulty()).isBetween(1, 3);
+            assertThat(item.maxFollowUp()).isBetween(1, 2);
+        });
+        assertThat(plan.title()).contains("模拟");
+        assertThat(plan.items().get(count - 1).roundNo()).isEqualTo(count);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"alibaba_style_backend,commerce_stock", "ant_style_backend,payment_reliability",
+            "jd_style_backend,fulfillment"})
+    void companyBusinessAxisIsNotLostInTheShortestPlan(String code, String businessModule) {
+        InterviewPlan plan = service.build(scenario(code, 5));
+        assertThat(plan.items()).extracting(InterviewPlanItem::moduleCode).contains(businessModule);
+    }
+
+    @Test
+    void sixCompanyPlansDoNotReuseTheSameQuestionText() {
+        List<String> codes = List.of("meituan_style_backend", "tencent_style_backend",
+                "xiaohongshu_style_backend", "alibaba_style_backend", "ant_style_backend", "jd_style_backend");
+        List<String> questions = codes.stream()
+                .flatMap(code -> service.build(scenario(code, 12)).items().stream())
+                .map(InterviewPlanItem::questionText).toList();
+
+        assertThat(questions).hasSize(72).doesNotHaveDuplicates();
+    }
+
+    @Test
+    void storedNewScenarioPlanIsRestoredWithoutChangingItsQuestions() {
+        InterviewPlan original = service.build(scenario("ant_style_backend", 12));
+        InterviewSession session = new InterviewSession();
+        session.setPlanJson(service.serialize(original));
+
+        assertThat(service.load(session)).isEqualTo(original);
+    }
+
+    @Test
+    void repeatedCompanyPracticeCanStartFromDifferentProjectQuestions() {
+        List<String> openingQuestions = java.util.stream.IntStream.range(0, 30)
+                .mapToObj(index -> service.build(scenario("alibaba_style_backend", 8))
+                        .items().get(0).questionText())
+                .distinct().toList();
+
+        assertThat(openingQuestions).hasSizeGreaterThan(1);
     }
 
     private CreateInterviewDTO scenario(String code, int count) {

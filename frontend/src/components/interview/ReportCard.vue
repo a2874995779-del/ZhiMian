@@ -109,7 +109,8 @@ const grade = computed(() => {
   line-height: 1.8;
   color: var(--zm-ink-soft);
   padding: 14px 16px;
-  background: var(--zm-surface-strong);
+  background: var(--zm-bg);
+  border: 1px solid var(--zm-border);
   border-radius: var(--zm-radius-md);
   white-space: pre-wrap;
 }

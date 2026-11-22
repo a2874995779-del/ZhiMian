@@ -1,5 +1,6 @@
 package com.zhimian.controller;
 
+import com.zhimian.annotation.RequireAdmin;
 import com.zhimian.common.Result;
 import com.zhimian.common.UserContext;
 import com.zhimian.common.ErrorCode;
@@ -9,6 +10,7 @@ import com.zhimian.model.vo.AiModelSettingsVO;
 import com.zhimian.service.AiModelSettingsService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -27,34 +29,52 @@ import java.net.URI;
 public class AiModelSettingsController {
     private final AiModelSettingsService settingsService;
 
+    @Value("${zhimian.ai.allow-admin-http:false}")
+    private boolean allowAdminHttp;
+
     @GetMapping
+    @RequireAdmin
     public Result<AiModelSettingsVO> get() {
-        return Result.success(settingsService.get(UserContext.getUserId()));
+        return Result.success(withTransportPolicy(settingsService.get(UserContext.getUserId())));
     }
 
     @PutMapping
+    @RequireAdmin
     public Result<AiModelSettingsVO> save(
             @Valid @RequestBody AiModelSettingsUpdateDTO dto,
-        HttpServletRequest request) {
-        if (StringUtils.hasText(dto.getApiKey()) && !isSecureTransport(request)) {
-            throw new BusinessException(
-                    ErrorCode.NO_AUTH,
-                    "保存 API Key 必须通过 HTTPS 连接"
-            );
-        }
-        return Result.success(settingsService.save(UserContext.getUserId(), dto));
+            HttpServletRequest request) {
+        requireAllowedTransport(request);
+        return Result.success(withTransportPolicy(settingsService.save(UserContext.getUserId(), dto)));
     }
 
     @PostMapping("/test")
-    public Result<Void> test() {
+    @RequireAdmin
+    public Result<Void> test(HttpServletRequest request) {
+        requireAllowedTransport(request);
         settingsService.test(UserContext.getUserId());
         return Result.success();
     }
 
     @DeleteMapping
+    @RequireAdmin
     public Result<Void> clear() {
         settingsService.clear(UserContext.getUserId());
         return Result.success();
+    }
+
+    private AiModelSettingsVO withTransportPolicy(AiModelSettingsVO settings) {
+        return new AiModelSettingsVO(settings.configured(), settings.provider(), settings.model(),
+                settings.maskedApiKey(), adminHttpAllowed());
+    }
+
+    private boolean adminHttpAllowed() {
+        return allowAdminHttp && "admin".equals(UserContext.getRole());
+    }
+
+    private void requireAllowedTransport(HttpServletRequest request) {
+        if (!isSecureTransport(request) && !adminHttpAllowed()) {
+            throw new BusinessException(ErrorCode.NO_AUTH, "保存或测试模型配置必须通过 HTTPS 连接");
+        }
     }
 
     private boolean isSecureTransport(HttpServletRequest request) {

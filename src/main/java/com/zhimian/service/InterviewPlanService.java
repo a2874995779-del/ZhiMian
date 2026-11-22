@@ -74,6 +74,10 @@ public class InterviewPlanService {
         }
         List<InterviewPlanItem> items = new ArrayList<>(directionItems(direction));
         shuffle(items);
+        if (direction == InterviewDirection.SPRING) {
+            items = selectBalancedItems(items,
+                    List.of("ioc", "aop", "transaction", "spring_boot", "spring_mvc"), targetCount);
+        }
         return new InterviewPlan(
                 InterviewMode.DIRECTION.getCode(),
                 direction.getCode(),
@@ -98,25 +102,33 @@ public class InterviewPlanService {
         );
     }
 
-    /**
-     * 综合面试保留项目开场，后续从不同模块随机抽题，避免变成固定题单或连续问同一类问题。
-     */
     private List<InterviewPlanItem> selectScenarioItems(
             Scenario scenario,
             int targetCount
     ) {
         List<InterviewPlanItem> candidates = new ArrayList<>(scenario.items);
-        InterviewPlanItem opening = candidates.stream()
-                .filter(item -> "project".equals(item.moduleCode()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("综合面试缺少项目开场题"));
-        candidates.remove(opening);
         shuffle(candidates);
+        List<String> priorities = new ArrayList<>(List.of("project"));
+        priorities.addAll(scenario.coreModules);
+        return selectBalancedItems(candidates, priorities, targetCount);
+    }
 
+    // Candidates are shuffled once; core coverage precedes optional breadth and depth.
+    private List<InterviewPlanItem> selectBalancedItems(List<InterviewPlanItem> candidates,
+                                                       List<String> priorityModules, int targetCount) {
         List<InterviewPlanItem> selected = new ArrayList<>();
         Set<String> selectedModules = new HashSet<>();
-        selected.add(opening);
-        selectedModules.add(opening.moduleCode());
+        for (String module : priorityModules) {
+            if (selected.size() >= targetCount) {
+                break;
+            }
+            InterviewPlanItem item = candidates.stream()
+                    .filter(candidate -> module.equals(candidate.moduleCode()))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("面试题池缺少必选模块: " + module));
+            selected.add(item);
+            selectedModules.add(module);
+        }
 
         // 第一轮优先保证模块多样性，让 8 道题覆盖基础、业务、并发和故障等不同能力。
         for (InterviewPlanItem candidate : candidates) {
@@ -134,7 +146,7 @@ public class InterviewPlanService {
                 if (selected.size() >= targetCount) {
                     break;
                 }
-                if (!selected.contains(candidate)) {
+                if (!"project".equals(candidate.moduleCode()) && !selected.contains(candidate)) {
                     selected.add(candidate);
                 }
             }
@@ -144,6 +156,30 @@ public class InterviewPlanService {
 
     private List<InterviewPlanItem> directionItems(InterviewDirection direction) {
         return switch (direction.getCode()) {
+            case "spring" -> List.of(
+                    item("ioc", "IoC 与 DI", "容器、依赖注入和解耦", "基础原理", 1, "一个 Service 需要调用 Mapper，为什么交给 Spring 注入通常比在 Service 中直接 new 更合适？请解释 IoC 和 DI 的关系。"),
+                    item("ioc", "IoC 与 DI", "构造器注入与依赖可见性", "工程实践", 1, "在智面的服务层中，构造器注入相比字段上的 @Autowired 有什么优势？它对单元测试有什么帮助？"),
+                    item("bean_lifecycle", "Bean 生命周期", "实例化、初始化和销毁", "基础原理", 2, "请按顺序描述一个普通单例 Bean 从创建到销毁的主要阶段，并指出依赖注入和 @PostConstruct 分别发生在哪里。"),
+                    item("bean_lifecycle", "Bean 扩展点", "BeanPostProcessor 与工厂后处理", "原理对比", 2, "BeanFactoryPostProcessor 和 BeanPostProcessor 处理的对象有什么不同？给 Bean 创建代理一般在哪类扩展点完成？"),
+                    item("dependency_injection", "依赖选择", "Qualifier、Primary 和策略注入", "工程实践", 1, "同一个接口有两种实现时，Spring 如何决定注入哪一个？怎样通过 @Qualifier 或 @Primary 明确选择？"),
+                    item("scope", "Bean 作用域", "单例与并发安全", "场景分析", 2, "默认单例的 Controller 把当前用户 ID 保存到成员变量里，会产生什么并发问题？你会怎样改造？"),
+                    item("circular_dependency", "循环依赖", "依赖图、构造器与重构", "故障排查", 2, "两个 Service 在构造器中相互依赖，为什么可能无法启动？你会先怎样拆分职责，而不是直接依赖 @Lazy 绕过？"),
+                    item("aop", "AOP 代理", "横切逻辑与动态代理", "基础原理", 2, "怎样用 AOP 为接口统一记录耗时？请说明切点、通知、代理对象和目标对象各自的职责。"),
+                    item("aop", "代理边界", "JDK 代理、CGLIB 与方法限制", "原理对比", 2, "JDK 动态代理和 CGLIB 的代理方式有什么不同？为什么不能只根据有没有接口就断言所有 Spring 应用的最终代理类型？"),
+                    item("aop", "AOP 工程实践", "切面顺序与敏感日志", "工程实践", 2, "鉴权、限流和耗时日志三个切面同时作用于一个方法时，你会如何安排执行顺序，并防止日志泄露 API Key？"),
+                    item("transaction", "声明式事务", "代理调用与自调用失效", "故障排查", 2, "同一个 Service 中，普通方法通过 this 调用标注 @Transactional 的方法，事务为什么可能不生效？你会如何验证并修复？"),
+                    item("transaction", "事务回滚", "异常规则与吞异常", "场景分析", 2, "一个事务方法更新两张表后捕获异常并直接返回成功，为什么可能没有回滚？受检异常和运行时异常的默认规则有什么区别？"),
+                    item("transaction", "事务传播", "REQUIRED 与 REQUIRES_NEW", "工程实践", 2, "业务保存失败但失败审计日志仍需保留时，REQUIRED 和 REQUIRES_NEW 分别会怎样影响提交？使用新事务有什么成本？"),
+                    item("transaction", "事务边界", "数据库与外部调用", "架构权衡", 2, "智面的数据库操作、Redis 写入和远程 AI 调用能否靠一个 @Transactional 保证全部原子成功？你会怎样控制事务边界？"),
+                    item("spring_boot", "自动配置", "条件装配与用户 Bean", "基础原理", 2, "Spring Boot 的自动配置为什么能在引入 starter 后创建所需 Bean？条件注解和自己声明的 Bean 如何影响这个过程？"),
+                    item("spring_boot", "配置管理", "外部配置与环境隔离", "工程实践", 1, "本机能启动、服务器却连错数据库时，你会如何检查激活的 profile 和外部配置？为什么不能把生产密钥直接打进 JAR？"),
+                    item("spring_mvc", "MVC 请求链路", "DispatcherServlet 与参数处理", "基础原理", 1, "一个 JSON 请求进入 Spring MVC 后，如何找到 Controller、绑定请求参数并把返回对象转成 JSON？"),
+                    item("spring_mvc", "接口校验", "Valid 与统一异常处理", "工程实践", 1, "你会怎样结合 @Valid 和 @RestControllerAdvice，保证参数错误和业务异常返回统一格式，而不是暴露堆栈？"),
+                    item("spring_async", "异步执行", "线程池、事务与上下文", "场景分析", 2, "把评分任务交给异步线程后，当前线程的事务和 ThreadLocal 用户信息是否会自动传过去？你会怎样传递必要数据？"),
+                    item("spring_test", "Spring 测试", "单元测试与容器集成测试", "测试设计", 1, "直接 new 一个 Service 的测试为什么不能证明 @Transactional 生效？哪些情况需要启动 Spring 容器或真实数据库测试？"),
+                    item("interceptor", "请求拦截", "Filter、Interceptor 与 AOP", "原理对比", 2, "过滤器、MVC 拦截器和 AOP 分别处于什么层次？智面通过方法注解判断管理员权限，为什么适合放在拦截器里？"),
+                    item("project", "项目复盘", "分层、事务与可测试性", "项目深挖", 2, "请选智面或论坛的一个功能，说明 Spring 的依赖注入、事务和异常处理如何协作，并提出一个你会补充的测试。")
+            );
             case "java_concurrency" -> List.of(
                     item("thread_pool", "线程池", "核心参数、任务提交和拒绝策略", "基础原理", 1, "线程池的核心参数有哪些？为什么不推荐直接使用 Executors 创建线程池？"),
                     item("thread_pool", "线程池", "线程池参数如何结合业务配置", "工程实践", 2, "如果一个接口既有 CPU 密集任务又有 IO 密集任务，你会如何分别配置线程池？"),
@@ -253,18 +289,118 @@ public class InterviewPlanService {
                 "小红书风格后端实习面试（模拟）",
                 "围绕内容发布、Feed 流、搜索、互动和推荐基础展开的实习生综合面试",
                 xiaohongshuScenarioItems()
+        ),
+        ALIBABA(
+                "alibaba_style_backend", "阿里风格后端实习面试（模拟）",
+                "公开面经主题改编：Spring、Java、数据库和缓存，结合电商商品与库存的小规模实现及性能排查",
+                alibabaScenarioItems(), List.of("spring", "mysql", "redis", "commerce_stock")
+        ),
+        ANT(
+                "ant_style_backend", "蚂蚁集团（蚂蚁金服）风格后端实习面试（模拟）",
+                "公开面经主题改编：项目、数据库、Redis、并发与稳定性，结合支付流水、幂等及结果核对的训练场景",
+                antScenarioItems(), List.of("spring", "mysql", "redis", "payment_reliability")
+        ),
+        JD(
+                "jd_style_backend", "京东风格后端实习面试（模拟）",
+                "公开面经主题改编：AOP、线程池、分布式锁和监控，结合零售库存、仓库履约及促销策略的训练场景",
+                jdScenarioItems(), List.of("spring", "mysql", "redis", "fulfillment")
         );
 
         private final String code;
         private final String title;
         private final String focus;
         private final List<InterviewPlanItem> items;
+        private final List<String> coreModules;
 
         Scenario(String code, String title, String focus, List<InterviewPlanItem> items) {
+            this(code, title, focus, items, List.of());
+        }
+
+        Scenario(String code, String title, String focus, List<InterviewPlanItem> items,
+                 List<String> coreModules) {
             this.code = code;
             this.title = title;
             this.focus = focus;
             this.items = items;
+            this.coreModules = coreModules;
+        }
+
+        private static List<InterviewPlanItem> alibabaScenarioItems() {
+            return List.of(
+                    item("project", "项目实现", "职责、依赖选择和验证", "项目深挖", 1, "选择智面或论坛的一条核心链路，说明你实现了哪些部分、为什么选择 Spring Boot，以及如何确认它确实解决了问题。", 2),
+                    item("project", "项目优化", "指标与技术取舍", "项目深挖", 1, "从你的项目中选一个改进点，讲清楚修改前的问题、方案比较以及你用什么证据判断改进有效。", 2),
+                    item("project", "项目分层", "接口、服务与持久化边界", "项目深挖", 1, "以一个自己写过的功能说明 Controller、Service 和 Mapper 的职责划分，哪些逻辑不应堆在 Controller 中？", 2),
+                    item("spring", "Spring 实践", "事务代理与边界", "场景分析", 2, "商品批量导入服务在内部调用事务方法，却发现部分数据提交了，怎样判断是自调用、异常处理还是事务边界的问题？", 2),
+                    item("mysql", "商品查询", "联合索引与执行计划", "工程实践", 2, "商品列表需要按店铺和上下架状态过滤并按创建时间排序，你会如何建立联合索引，并用 EXPLAIN 验证分页查询？", 2),
+                    item("redis", "商品缓存", "缓存更新与价格校验", "架构权衡", 2, "商品详情用了缓存但商家刚修改价格，怎样处理缓存更新，以及下单时应以什么数据确认成交价格？", 2),
+                    item("commerce_stock", "电商库存", "条件更新与竞争", "业务设计", 2, "商品只有十件库存时，怎样先用数据库条件更新实现不超卖？如果并发增加，怎样判断是否需要缓存预扣而非直接增加复杂度？", 2),
+                    item("java_collection", "集合应用", "Map、不可变数据与共享状态", "基础原理", 1, "商品属性保存在 Map 中时，HashMap 在什么情况下不适合共享使用？换成 ConcurrentHashMap 是否就能保证整个业务操作线程安全？", 2),
+                    item("thread_local", "线程上下文", "用户隔离与清理", "故障排查", 2, "线程池复用线程时，ThreadLocal 中的登录用户为什么必须清理？异步商品导入任务应该怎样获得操作者信息？", 2),
+                    item("bean_strategy", "Bean 与策略", "依赖注入和可测试性", "工程实践", 1, "短信和邮件通知实现同一个接口，你会怎样让 Spring 管理实现并按业务选择，而不是在服务层写大量 new 和 if？", 2),
+                    item("concurrency", "导入线程池", "有界队列和拒绝策略", "工程实践", 2, "商品导入需要调用图片服务和写数据库，你会如何选择线程池大小、队列容量以及任务被拒绝时的用户反馈？", 2),
+                    item("cache_failure", "缓存异常", "空值、过期和回源", "故障治理", 2, "查询不存在的商品不断打到数据库，你会如何区分缓存穿透与缓存击穿，并选择适合小项目的防护方案？", 2),
+                    item("message", "事件同步", "提交后通知与失败补偿", "可靠性", 2, "商品保存后要更新搜索或发通知，为什么事务提交前就发送可能出现问题？没有消息队列时可以怎样记录待处理事件？", 2),
+                    item("rate_limit", "入口保护", "令牌桶与排队", "系统设计", 2, "促销开始出现突发请求，你会怎样比较令牌桶和漏桶，并决定哪些请求拒绝、哪些排队？", 2),
+                    item("database_lock", "库存锁", "行锁、索引与锁范围", "场景分析", 2, "扣库存 SQL 的条件没有合适索引时，为什么可能锁住更多记录？你会如何检查锁等待并调整查询？", 2),
+                    item("jvm", "内存排查", "导入批次与对象存活", "故障排查", 2, "一次读取全部商品到内存导致频繁 GC，你会如何定位存活对象，并比较分页、流式读取与分批处理？", 2),
+                    item("http", "接口语义", "HTTP 状态与重试", "基础原理", 1, "外部服务返回超时、429 或 500 时，商品导入任务应怎样区别处理？重试前为什么需要考虑操作是否幂等？", 2),
+                    item("algorithm", "热点商品", "TopK 与复杂度", "思路表达", 2, "给定一批商品访问次数，要选出访问最多的十个商品，你会选择排序还是小顶堆？分别适合什么规模？", 1),
+                    item("observability", "链路监控", "分段耗时与指标", "工程实践", 2, "商品查询变慢时，如何分别统计缓存、数据库和序列化耗时，而不是只打印一个接口总耗时？", 2),
+                    item("security", "租户权限", "服务端身份与条件约束", "安全设计", 1, "商家修改商品时，为什么不能只相信前端传来的商家 ID？怎样在数据库更新条件中避免修改别人的商品？", 2),
+                    item("testing", "并发验证", "边界与可重复测试", "测试设计", 2, "你会如何测试库存为零、重复请求以及多个线程同时扣减的情况，证明方案确实没有超卖？", 1)
+            );
+        }
+
+        private static List<InterviewPlanItem> antScenarioItems() {
+            return List.of(
+                    item("project", "项目可靠性", "状态与失败路径", "项目深挖", 1, "选一个你负责的项目功能，说明成功之外有哪些失败状态，以及你怎样避免用户重试导致重复处理。", 2),
+                    item("project", "项目一致性", "事实来源和恢复", "项目深挖", 1, "你的项目同时使用 MySQL 和 Redis 时，哪个存储保存业务事实？出现数据不一致时你会怎样排查和恢复？", 2),
+                    item("project", "项目故障", "证据与修复验证", "项目深挖", 1, "请复盘一次项目中结果不符合预期的问题，说明你怎样收集证据、定位根因并避免同类问题再次发生。", 2),
+                    item("spring", "Spring 事务", "回滚规则与流水提交", "场景分析", 2, "余额更新与支付流水需要一起提交，使用 @Transactional 时怎样设置异常处理，并验证捕获异常没有意外导致部分提交？", 2),
+                    item("mysql", "金额与流水", "精度、唯一键和索引", "数据建模", 2, "设计一个教学用支付流水表时，金额为什么不适合用 float？业务流水号唯一键和按用户查账的索引分别解决什么问题？", 2),
+                    item("redis", "支付幂等", "缓存辅助与数据库约束", "架构权衡", 2, "支付接口用 Redis 记录已处理请求后，Redis 重启或 Key 过期还能保证不重复扣款吗？你会怎样结合数据库唯一约束？", 2),
+                    item("payment_reliability", "支付结果确认", "超时、重复与待确认状态", "业务设计", 2, "扣款请求超时但不知道是否成功时，为什么不能直接再次扣款？请设计待确认状态、结果查询和重复请求的处理流程。", 2),
+                    item("account_lock", "余额并发", "条件更新与版本号", "工程实践", 2, "两个请求同时扣减同一账户余额，怎样用 SQL 条件更新或乐观锁避免余额变成负数？如何判断更新失败的原因？", 2),
+                    item("callback", "结果回调", "重复、乱序与状态校验", "可靠性", 2, "支付结果通知重复送达，或者失败通知晚于成功通知到达时，你会怎样通过状态条件更新保护最终结果？", 2),
+                    item("audit", "审计记录", "业务日志与审计事务", "工程实践", 2, "业务事务失败后仍需记录失败原因，审计日志能否和业务放在同一事务？选择独立事务时要考虑哪些资源成本？", 2),
+                    item("reconciliation", "数据核对", "流水核对与差异处理", "业务设计", 2, "怎样写一个小规模定时任务，对比支付流水与业务订单状态，发现缺失或不一致记录，而不是发现差异就直接覆盖数据？", 2),
+                    item("distributed_lock", "锁与幂等", "锁粒度、过期和唯一约束", "原理对比", 2, "分布式锁和幂等分别解决什么问题？如果锁在业务完成前过期，为什么还需要数据库约束兜底？", 2),
+                    item("throughput", "吞吐瓶颈", "连接池与锁等待", "故障排查", 2, "支付服务吞吐下降但 CPU 不高时，你会怎样检查数据库连接池、热点账户锁等待和下游请求耗时？", 2),
+                    item("jvm", "Full GC 排查", "对象存活与分配速度", "故障排查", 2, "服务频繁 Full GC 时，怎样结合 GC 日志和堆信息区分内存泄漏、瞬时流量和对象创建过多？", 2),
+                    item("retry", "重试治理", "退避、次数和请求标识", "可靠性", 2, "下游支付服务短暂失败时，怎样设置重试次数与退避，避免所有请求同时重试，并保持同一次业务操作的标识不变？", 2),
+                    item("security", "敏感数据", "脱敏与最小权限", "安全设计", 1, "支付接口排查问题需要日志时，哪些字段应脱敏或不记录？为什么知道一个订单编号并不意味着有权查看其支付信息？", 2),
+                    item("time", "时间与过期", "数据库时间和时区", "故障排查", 1, "应用与数据库时区不同，可能怎样影响支付超时关闭任务？你会如何统一比较时间并验证新记录不会刚创建就过期？", 2),
+                    item("algorithm", "流水筛选", "堆与流式处理", "思路表达", 2, "在大量流水中找金额最大的五条记录，怎样使用固定大小的堆进行流式处理？遇到相同金额时如何保证结果稳定？", 1),
+                    item("testing", "可靠性验证", "重复调用与故障注入", "测试设计", 2, "针对重复扣款防护，你会设计哪些测试来覆盖并发请求、网络超时、事务回滚和 Redis 不可用？", 2),
+                    item("failure_recovery", "人工恢复", "可重放与可追踪", "架构权衡", 2, "支付状态长时间待确认时，怎样保留可核对证据并提供人工处理入口，避免直接手工修改余额而失去审计记录？", 2),
+                    item("java_concurrency", "共享对象", "线程安全与业务原子性", "基础原理", 1, "一个单例服务使用 AtomicInteger 统计请求次数，它能否同时保证扣款业务的原子性？请区分内存计数与数据库事务。", 1)
+            );
+        }
+
+        private static List<InterviewPlanItem> jdScenarioItems() {
+            return List.of(
+                    item("project", "项目交付", "需求、实现与验收", "项目深挖", 1, "挑一个你完整实现的功能，讲清楚需求、调用链、上线检查以及你亲自承担的工作，不只介绍使用了哪些框架。", 2),
+                    item("project", "项目监控", "可观测性和问题定位", "项目深挖", 1, "介绍一次你排查项目问题的过程，说明日志或指标怎样帮助定位，以及你会补充什么监控来更早发现异常。", 2),
+                    item("project", "项目设计模式", "具体问题与复杂度", "项目深挖", 1, "你的项目中有哪些实际用过的设计模式？选一个说明它消除了什么重复逻辑，以及不用这个模式是否也能满足需求。", 2),
+                    item("spring", "促销策略注入", "IoC、策略与实现选择", "工程实践", 2, "优惠券、满减和会员价分别有不同实现，你会如何利用 Spring 注入策略集合，并明确组合顺序而不是写一长串 if？", 2),
+                    item("mysql", "仓库库存", "唯一约束与条件更新", "数据建模", 2, "同一个 SKU 在不同仓库有独立库存，你会怎样设计表的唯一约束和库存扣减 SQL，避免扣错仓或扣成负数？", 2),
+                    item("redis", "库存预占", "Lua 原子操作与持久化", "架构权衡", 2, "用 Redis 预占库存时，为什么先读库存再减可能不安全？Lua 能保证哪些操作原子执行，又不能保证哪些数据库操作？", 2),
+                    item("fulfillment", "履约拆单", "仓库分配与重复执行", "业务设计", 2, "订单里有三件商品但一个仓库无法全部发货，如何先实现简单拆单和仓库分配，并避免任务重试创建重复出库单？", 2),
+                    item("aop", "自定义注解", "注解参数、切面与粒度", "工程实践", 2, "要为库存操作设计分布式锁注解，你会设置哪些参数？切面怎样得到 SKU 和仓库标识，并保证异常时释放自己的锁？", 2),
+                    item("thread_pool", "异步线程池", "队列、隔离与拒绝", "工程实践", 2, "订单校验任务和物流接口调用任务是否应共用线程池？怎样防止慢物流请求把队列堆满并拖累下单？", 2),
+                    item("monitoring", "链路监控", "Trace 与分段指标", "工程实践", 2, "下单、库存预占、出库和物流通知是多步链路，你会记录哪些标识与指标，才能知道失败发生在哪一步？", 2),
+                    item("rate_limit", "促销限流", "算法开销与突发请求", "系统设计", 2, "促销入口需要限流时，如何比较计数器、滑动窗口和令牌桶的精度、内存及突发流量处理能力？", 2),
+                    item("distributed_lock", "锁选型", "粒度、超时与兜底", "原理对比", 2, "对仓库库存加锁时，锁整张库存表和锁单个仓库 SKU 各有什么影响？为什么 Redis 锁不能代替数据库的业务约束？", 2),
+                    item("transaction", "库存事务", "隔离级别与锁范围", "场景分析", 2, "在一个事务中先查询库存再更新库存，为什么仅开启事务还不一定防止并发超卖？你会怎样结合隔离级别、锁或条件更新？", 2),
+                    item("jvm", "队列内存", "任务积压与 OOM", "故障排查", 2, "服务内存上升并出现 OOM，而线程池队列很长时，你会怎样验证积压任务是否持有大对象，并设计有界队列和背压？", 2),
+                    item("reservation", "预占释放", "支付超时与库存补偿", "可靠性", 2, "用户下单预占库存后没有付款，怎样实现超时释放，并避免释放任务与支付成功同时到达导致库存重复回补？", 2),
+                    item("warehouse_query", "库存查询", "批量读取与 N+1", "工程实践", 1, "购物车有多个 SKU，逐个查询每个仓库库存可能造成什么问题？你会怎样批量查询并控制一次返回的数据量？", 2),
+                    item("logistics", "物流状态", "事件乱序与终态保护", "业务设计", 2, "物流通知先收到已签收、后收到运输中时，订单展示应如何处理？怎样保存事件记录而不让状态倒退？", 2),
+                    item("algorithm", "任务排序", "优先队列与公平性", "思路表达", 2, "仓库待处理出库任务带有优先级和创建时间，怎样使用优先队列安排处理，并避免低优先级任务一直饥饿？", 1),
+                    item("testing", "库存验证", "并发边界与补偿", "测试设计", 2, "怎样测试跨仓扣库存、重复出库和超时释放，让并发测试既可重复又能发现库存总量不守恒的问题？", 2),
+                    item("deployment", "发布检查", "配置、回滚与健康检查", "工程实践", 1, "零售服务发布后接口能连接但业务失败，你会检查哪些配置和依赖？为什么只看到 Java 进程存在还不能判断发布成功？", 1),
+                    item("java_collection", "数据去重", "equals、hashCode 与集合", "基础原理", 1, "用 HashSet 对购物车商品去重时，SKU 对象的 equals 和 hashCode 应怎样设计？数量字段为什么不应随意参与身份判断？", 1)
+            );
         }
 
         static Scenario fromCode(String code) {

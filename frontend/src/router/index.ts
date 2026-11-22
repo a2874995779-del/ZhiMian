@@ -73,7 +73,7 @@ const router = createRouter({
       path: '/profile',
       name: 'profile',
       component: () => import('../views/ModelSettings.vue'),
-      meta: { label: '模型设置', icon: 'settings', requiresAuth: true },
+      meta: { label: '模型设置', icon: 'settings', requiresAuth: true, requiresAdmin: true },
     },
   ],
 })

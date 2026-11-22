@@ -1,10 +1,11 @@
-export type InterviewDirectionCode = 'java_concurrency' | 'jvm' | 'mysql' | 'redis' | 'system_design' | 'rag'
+export type InterviewDirectionCode = 'spring' | 'java_concurrency' | 'jvm' | 'mysql' | 'redis' | 'system_design' | 'rag'
 export type InterviewMode = 'direction' | 'scenario'
 
 export interface DirectionOption {
   code: InterviewDirectionCode
   label: string
   focus: string
+  corePlanLabels?: string[]
 }
 
 export interface ScenarioOption {
@@ -12,10 +13,14 @@ export interface ScenarioOption {
   label: string
   focus: string
   modules: string[]
+  corePlanLabels?: string[]
+  references?: { title: string; url: string; publishedAt: string }[]
 }
 
 // 和后端 InterviewDirection 枚举一一对应
 export const DIRECTION_OPTIONS: DirectionOption[] = [
+  { code: 'spring', label: 'Spring 框架', focus: 'IoC、Bean 生命周期、AOP、事务失效、Boot 自动配置与 MVC',
+    corePlanLabels: ['IoC 与依赖注入', 'AOP 代理', '事务与失效', 'Boot 自动配置', 'MVC 链路'] },
   { code: 'java_concurrency', label: 'Java 并发', focus: '线程池、锁机制、CAS、AQS、并发容器' },
   { code: 'jvm', label: 'JVM', focus: '内存区域、垃圾回收、类加载机制' },
   { code: 'mysql', label: 'MySQL', focus: '索引原理、事务隔离级别、锁机制' },
@@ -25,6 +30,37 @@ export const DIRECTION_OPTIONS: DirectionOption[] = [
 ]
 
 export const SCENARIO_OPTIONS: ScenarioOption[] = [
+  {
+    code: 'alibaba_style_backend',
+    label: '阿里风格后端实习面试（模拟）',
+    focus: 'Spring、数据库、缓存、商品库存、并发与性能排查',
+    modules: ['项目深挖', 'Spring', '商品查询', '商品缓存', '库存竞争', '线程池', '故障排查'],
+    corePlanLabels: ['项目深挖', 'Spring 实践', '商品查询', '商品缓存', '电商库存'],
+    references: [
+      { title: '阿里云 Java 研发实习一面', publishedAt: '2025-04-25', url: 'https://www.nowcoder.com/discuss/743798386737897472?sourceSSR=dynamic' },
+      { title: '阿里云实习二面（回顾 2023 年经历）', publishedAt: '2024-03-01', url: 'https://www.nowcoder.com/discuss/591740699846926336' },
+    ],
+  },
+  {
+    code: 'ant_style_backend',
+    label: '蚂蚁集团（蚂蚁金服）风格后端实习面试（模拟）',
+    focus: '事务、支付幂等、流水核对、余额并发与系统稳定性',
+    modules: ['项目深挖', 'Spring 事务', '金额与流水', '幂等缓存', '结果确认', '数据核对', '稳定性'],
+    corePlanLabels: ['项目深挖', 'Spring 事务', '金额与流水', '支付幂等', '支付结果确认'],
+    references: [
+      { title: '蚂蚁后端面经（意向）', publishedAt: '2025-10-13', url: 'https://www.nowcoder.com/discuss/807221949330894848' },
+    ],
+  },
+  {
+    code: 'jd_style_backend',
+    label: '京东风格后端实习面试（模拟）',
+    focus: '促销策略、仓库库存、履约拆单、AOP、线程池与监控',
+    modules: ['项目深挖', 'Spring 策略', '仓库库存', 'Lua 预占', '履约拆单', '自定义注解', '监控'],
+    corePlanLabels: ['项目深挖', '促销策略注入', '仓库库存', '库存预占', '履约拆单'],
+    references: [
+      { title: '京东零售 JDY Java 实习一面', publishedAt: '2025-08-15', url: 'https://ac.nowcoder.com/discuss/1535507' },
+    ],
+  },
   {
     code: 'meituan_style_backend',
     label: '美团风格后端实习面试（模拟）',

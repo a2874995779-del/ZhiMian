@@ -1,6 +1,7 @@
 package com.zhimian.model.enums;
 
 public enum InterviewDirection {
+    SPRING("spring", "Spring 框架", "IoC 与依赖注入、Bean 生命周期、AOP 代理、事务传播与失效、Spring Boot 自动配置、Spring MVC 与项目实践"),
     JAVA_CONCURRENCY("java_concurrency", "Java 并发", "线程池、锁机制、CAS、AQS、并发容器、线程协作工具"),
     JVM("jvm", "JVM", "内存区域划分、垃圾回收算法与收集器、类加载机制、常见调优场景"),
     MYSQL("mysql", "MySQL", "索引原理、事务隔离级别与 MVCC、锁机制、SQL 优化与索引失效场景"),

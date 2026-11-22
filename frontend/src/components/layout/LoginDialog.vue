@@ -51,7 +51,7 @@ async function submit() {
   try {
     if (mode.value === 'register') {
       await auth.register(normalizedUsername, password.value, nickname.value.trim() || undefined)
-      ElMessage.success('账号创建成功，请先到“模型设置”填写自己的模型信息')
+      ElMessage.success('账号创建成功')
     } else {
       await auth.login(normalizedUsername, password.value)
       ElMessage.success(`欢迎回来，${auth.user?.nickname ?? auth.user?.username}`)

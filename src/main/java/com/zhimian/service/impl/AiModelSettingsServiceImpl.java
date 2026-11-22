@@ -67,10 +67,10 @@ public class AiModelSettingsServiceImpl implements AiModelSettingsService {
     private AiModelSettingsVO toView(UserAiModelConfig config) {
         if (config == null || !StringUtils.hasText(config.model())
                 || !StringUtils.hasText(config.encryptedApiKey())) {
-            return new AiModelSettingsVO(false, PROVIDER_NAME, null, null);
+            return new AiModelSettingsVO(false, PROVIDER_NAME, null, null, false);
         }
         String key = apiKeyCipher.decrypt(config.encryptedApiKey());
         String masked = "••••••••" + key.substring(Math.max(0, key.length() - 4));
-        return new AiModelSettingsVO(true, PROVIDER_NAME, config.model(), masked);
+        return new AiModelSettingsVO(true, PROVIDER_NAME, config.model(), masked, false);
     }
 }
